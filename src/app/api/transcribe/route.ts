@@ -6,54 +6,57 @@ import { TranscriptionData } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
-    const startTime = Date.now();
-    const { videoUrl } = await request.json(); // Now matches frontend!
+    console.log('1. Starting transcription request...');
+    
+    // Step 1: Get request body
+    const { videoUrl } = await request.json();
+    console.log('2. Request body:', { videoUrl });
     
     if (!videoUrl) {
+      console.error('3. Missing videoUrl in request');
       return NextResponse.json({ 
         success: false, 
-        error: 'Video URL is required' 
+        error: 'Missing videoUrl parameter' 
       }, { status: 400 });
     }
 
-    console.log('Processing video:', videoUrl);
-
-    // Step 1: Get transcript using our smart routing
+    // Step 2: Get video transcript
+    console.log('4. Getting video transcript...');
     const rawTranscript = await getVideoTranscript(videoUrl);
+    console.log('5. Got transcript, length:', rawTranscript?.length);
     
-    // Step 2: Extract video title
-    const videoTitle = extractVideoTitle(videoUrl);
+    if (!rawTranscript) {
+      console.error('6. No transcript returned');
+      return NextResponse.json({ 
+        success: false, 
+        error: 'No transcript available for this video' 
+      }, { status: 400 });
+    }
+
+    // Step 3: Process with Claude
+    console.log('7. Processing with Claude...');
+    const startTime = Date.now();
     
-    // Step 3: Clean transcript with Claude
     const cleaningResponse = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 4000,
       messages: [{
         role: 'user',
-        content: `You are a JSON API. You must respond with valid JSON only, no other text.
-
-Clean up this video transcript and make it more readable. Remove filler words, fix grammar, and organize it into proper paragraphs. Keep the meaning and content intact.
-
-Original transcript:
-${rawTranscript}
-
-Return a JSON object with exactly these fields:
-{
-  "cleaned_transcript": "The cleaned, readable transcript",
-  "summary": "A brief summary (2-3 sentences)",
-  "key_points": ["Point 1", "Point 2", "Point 3"]
-}
-
-Do not include any text outside the JSON object.`
+        content: `Please clean up and format this transcript, then provide a summary and key points. Here's the transcript:\n\n${rawTranscript}`
       }]
     });
-
+    
+    console.log('8. Claude response received');
+    const processingTime = (Date.now() - startTime) / 1000;
+    
+    // Parse Claude's response
+    console.log('9. Parsing Claude response...');
     const content = cleaningResponse.content[0];
     if (content.type !== 'text') {
       throw new Error('Unexpected response type from Claude');
     }
     const result = JSON.parse(content.text);
-    const processingTime = Math.round((Date.now() - startTime) / 1000);
+    console.log('10. Response parsed successfully');
     
     // Calculate costs
     const inputTokens = cleaningResponse.usage.input_tokens;
@@ -63,9 +66,10 @@ Do not include any text outside the JSON object.`
     const totalCost = claudeCost + transcriptCost;
 
     // Step 4: Save to database
+    console.log('11. Saving to database...');
     const transcriptionData: TranscriptionData = {
       video_url: videoUrl,
-      video_title: videoTitle,
+      video_title: 'YouTube Video', // TODO: Get actual title
       raw_transcript: rawTranscript,
       cleaned_transcript: result.cleaned_transcript,
       summary: result.summary,
@@ -84,20 +88,26 @@ Do not include any text outside the JSON object.`
       .single();
 
     if (error) {
-      console.error('Database error:', error);
+      console.error('12. Database error:', error);
       return NextResponse.json({ 
         success: false, 
         error: `Database error: ${error.message}` 
       }, { status: 500 });
     }
 
+    console.log('13. Successfully saved to database');
     return NextResponse.json({ 
       success: true, 
       data 
     });
 
   } catch (error: any) {
-    console.error('Transcription error:', error);
+    console.error('❌ Transcription error:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      cause: error.cause
+    });
     return NextResponse.json({ 
       success: false, 
       error: `Internal server error: ${error.message}` 
