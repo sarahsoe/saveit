@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { getVideoTranscript, getTranscriptionCost, extractVideoTitle } from '@/lib/video-processor';
 import { TranscriptionData, ApiResponse, ClaudeResponse } from '@/types';
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse<TranscriptionData>>> {
   try {
     console.log('🔍 Environment check:');
     console.log('- ANTHROPIC_API_KEY exists:', !!process.env.ANTHROPIC_API_KEY);
@@ -13,10 +13,10 @@ export async function POST(request: NextRequest) {
     console.log('- Claude model:', CLAUDE_MODEL);
 
     const startTime = Date.now();
-    const { videoUrl } = await request.json();
+    const { videoUrl } = await request.json() as { videoUrl: string };
     
     if (!videoUrl) {
-      return NextResponse.json<ApiResponse<null>>({ 
+      return NextResponse.json({ 
         success: false, 
         error: 'Video URL is required' 
       }, { status: 400 });
@@ -30,8 +30,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 1: Get transcript
-    const transcript = await getVideoTranscript(videoUrl);
-    console.log('2. Got transcript, length:', transcript?.length);
+    const rawTranscript = await getVideoTranscript(videoUrl);
+    console.log('2. Got transcript, length:', rawTranscript?.length);
     
     // Step 2: Extract video title
     const videoTitle = extractVideoTitle(videoUrl);
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
         content: `Please clean up this video transcript and make it more readable. Remove filler words, fix grammar, and organize it into proper paragraphs. Keep the meaning and content intact.
 
 Original transcript:
-${transcript}
+${rawTranscript}
 
 IMPORTANT: Respond ONLY with valid JSON in this exact format:
 {
@@ -64,7 +64,7 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
     if (contentBlock.type !== 'text') {
       throw new Error('Unexpected response format from Claude API');
     }
-    const result = JSON.parse(contentBlock.text) as ClaudeResponse;
+    const result: ClaudeResponse = JSON.parse(contentBlock.text);
     console.log('5. Parsed Claude response');
     
     const processingTime = Math.round((Date.now() - startTime) / 1000);
@@ -80,7 +80,7 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
     const transcriptionData: TranscriptionData = {
       video_url: videoUrl,
       video_title: videoTitle,
-      transcript,
+      transcript: rawTranscript,
       cleaned_transcript: result.cleaned_transcript,
       summary: result.summary,
       key_points: result.key_points,
@@ -100,14 +100,14 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
 
     if (error) {
       console.error('❌ Database error:', error);
-      return NextResponse.json<ApiResponse<null>>({ 
+      return NextResponse.json({ 
         success: false, 
         error: `Database error: ${error.message}` 
       }, { status: 500 });
     }
 
     console.log('✅ Success! Data saved:', !!data);
-    return NextResponse.json<ApiResponse<TranscriptionData>>({ 
+    return NextResponse.json({ 
       success: true, 
       data 
     });
@@ -120,7 +120,7 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
       name: err.name
     });
     
-    return NextResponse.json<ApiResponse<null>>({ 
+    return NextResponse.json({ 
       success: false, 
       error: `Internal server error: ${err.message}` 
     }, { status: 500 });
