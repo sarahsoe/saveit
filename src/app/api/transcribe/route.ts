@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { anthropic, CLAUDE_MODEL } from '@/lib/anthropic';
 import { supabase } from '@/lib/supabase';
-import { getVideoTranscript, getTranscriptionCost } from '@/lib/video-processor';
+import { getVideoTranscript, getTranscriptionCost, extractVideoTitle } from '@/lib/video-processor';
 import { TranscriptionData, ApiResponse, ClaudeResponse } from '@/types';
 
 export async function POST(request: NextRequest) {
@@ -125,14 +125,4 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
       error: `Internal server error: ${err.message}` 
     }, { status: 500 });
   }
-}
-
-function extractVideoTitle(url: string): string {
-  if (url.includes('youtube.com') || url.includes('youtu.be')) {
-    return 'YouTube Video';
-  }
-  if (url.includes('spotify.com') || url.includes('anchor.fm')) {
-    return 'Podcast Episode';
-  }
-  return `Video from ${new URL(url).hostname}`;
 } 

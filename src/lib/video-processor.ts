@@ -5,19 +5,16 @@ export async function getVideoTranscript(url: string): Promise<string> {
   try {
     console.log('🎬 Processing URL:', url);
     
-    // Check if it's a YouTube URL
     if (isYouTubeURL(url)) {
       console.log('📺 Detected YouTube URL, fetching transcript...');
       return await getYouTubeTranscript(url);
     }
     
-    // Check if it's a podcast URL
     if (isPodcastURL(url)) {
       console.log('🎧 Detected podcast URL, using Whisper...');
       return await getWhisperTranscript(url);
     }
     
-    // Default to Whisper for other videos
     console.log('🎬 Using Whisper for unknown video type...');
     return await getWhisperTranscript(url);
     
@@ -29,34 +26,24 @@ export async function getVideoTranscript(url: string): Promise<string> {
 }
 
 function isYouTubeURL(url: string): boolean {
-  try {
-    const isYT = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)/.test(url);
-    console.log('🔍 Is YouTube URL?', isYT);
-    return isYT;
-  } catch (error) {
-    console.error('❌ Invalid URL format:', error);
-    return false;
-  }
+  const isYT = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)/.test(url);
+  console.log('🔍 Is YouTube URL?', isYT);
+  return isYT;
 }
 
 function isPodcastURL(url: string): boolean {
-  try {
-    const podcastDomains = [
-      'anchor.fm', 'spotify.com', 'apple.com/podcasts', 'podcasts.google.com',
-      'soundcloud.com', 'buzzsprout.com', 'libsyn.com', 'simplecast.com'
-    ];
-    
-    const audioExtensions = ['.mp3', '.wav', '.m4a', '.aac', '.ogg'];
-    
-    const isPodcast = podcastDomains.some(domain => url.includes(domain)) ||
-           audioExtensions.some(ext => url.includes(ext));
-    
-    console.log('🔍 Is Podcast URL?', isPodcast);
-    return isPodcast;
-  } catch (error) {
-    console.error('❌ Invalid URL format:', error);
-    return false;
-  }
+  const podcastDomains = [
+    'anchor.fm', 'spotify.com', 'apple.com/podcasts', 'podcasts.google.com',
+    'soundcloud.com', 'buzzsprout.com', 'libsyn.com', 'simplecast.com'
+  ];
+  
+  const audioExtensions = ['.mp3', '.wav', '.m4a', '.aac', '.ogg'];
+  
+  const isPodcast = podcastDomains.some(domain => url.includes(domain)) ||
+         audioExtensions.some(ext => url.includes(ext));
+  
+  console.log('🔍 Is Podcast URL?', isPodcast);
+  return isPodcast;
 }
 
 async function getYouTubeTranscript(url: string): Promise<string> {
@@ -70,7 +57,7 @@ async function getYouTubeTranscript(url: string): Promise<string> {
       return 'No transcript available for this video.';
     }
     
-    const fullText = transcript.map((item: TranscriptItem) => item.text).join(' ');
+    const fullText = transcript.map(item => item.text).join(' ');
     console.log('📝 Full transcript length:', fullText.length, 'characters');
     
     return fullText;
@@ -96,4 +83,14 @@ export function getTranscriptionCost(url: string, durationMinutes: number): numb
   const cost = durationMinutes * 0.006;
   console.log('💰 Whisper cost for', durationMinutes, 'minutes:', cost);
   return cost;
+}
+
+export function extractVideoTitle(url: string): string {
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    return 'YouTube Video';
+  }
+  if (url.includes('spotify.com') || url.includes('anchor.fm')) {
+    return 'Podcast Episode';
+  }
+  return `Video from ${new URL(url).hostname}`;
 } 
