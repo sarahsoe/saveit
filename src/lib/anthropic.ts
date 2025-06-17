@@ -4,4 +4,5 @@ export const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-export const CLAUDE_MODEL = 'claude-3-sonnet-20240229'; 
+// Use the latest Claude 3.5 Sonnet model
+export const CLAUDE_MODEL = 'claude-3-5-sonnet-20241022'; 

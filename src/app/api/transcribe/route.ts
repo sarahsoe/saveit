@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { anthropic, CLAUDE_MODEL } from '@/lib/anthropic';
 import { supabase } from '@/lib/supabase';
+import { getVideoTranscript, getTranscriptionCost } from '@/lib/video-processor';
 import { TranscriptionData } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
     const startTime = Date.now();
-    const { videoUrl } = await request.json();
+    const { videoUrl } = await request.json(); // Now matches frontend!
     
     if (!videoUrl) {
       return NextResponse.json({ 
@@ -15,11 +16,13 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Step 1: Extract video metadata
-    const videoTitle = await extractVideoTitle(videoUrl);
+    console.log('Processing video:', videoUrl);
+
+    // Step 1: Get transcript using our smart routing
+    const rawTranscript = await getVideoTranscript(videoUrl);
     
-    // Step 2: Get transcript (mock for now)
-    const rawTranscript = await getRawTranscript(videoUrl);
+    // Step 2: Extract video title
+    const videoTitle = extractVideoTitle(videoUrl);
     
     // Step 3: Clean transcript with Claude
     const cleaningResponse = await anthropic.messages.create({
@@ -27,22 +30,21 @@ export async function POST(request: NextRequest) {
       max_tokens: 4000,
       messages: [{
         role: 'user',
-        content: `Please clean up this video transcript and make it more readable. Remove filler words, fix grammar, and organize it into proper paragraphs. Keep the meaning and content intact.
+        content: `You are a JSON API. You must respond with valid JSON only, no other text.
+
+Clean up this video transcript and make it more readable. Remove filler words, fix grammar, and organize it into proper paragraphs. Keep the meaning and content intact.
 
 Original transcript:
 ${rawTranscript}
 
-Please provide:
-1. A cleaned, readable transcript
-2. A brief summary (2-3 sentences)
-3. Key points (3-5 bullet points)
-
-Format your response as JSON:
+Return a JSON object with exactly these fields:
 {
-  "cleaned_transcript": "...",
-  "summary": "...",
-  "key_points": ["...", "..."]
-}`
+  "cleaned_transcript": "The cleaned, readable transcript",
+  "summary": "A brief summary (2-3 sentences)",
+  "key_points": ["Point 1", "Point 2", "Point 3"]
+}
+
+Do not include any text outside the JSON object.`
       }]
     });
 
@@ -53,10 +55,12 @@ Format your response as JSON:
     const result = JSON.parse(content.text);
     const processingTime = Math.round((Date.now() - startTime) / 1000);
     
-    // Calculate costs (rough estimate)
+    // Calculate costs
     const inputTokens = cleaningResponse.usage.input_tokens;
     const outputTokens = cleaningResponse.usage.output_tokens;
-    const cost = calculateCost(inputTokens, outputTokens);
+    const claudeCost = (inputTokens * 0.000003) + (outputTokens * 0.000015);
+    const transcriptCost = getTranscriptionCost(videoUrl, 5); // Estimate 5 min
+    const totalCost = claudeCost + transcriptCost;
 
     // Step 4: Save to database
     const transcriptionData: TranscriptionData = {
@@ -68,7 +72,7 @@ Format your response as JSON:
       key_points: result.key_points,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
-      cost,
+      cost: totalCost,
       processing_time_seconds: processingTime,
       status: 'completed'
     };
@@ -83,7 +87,7 @@ Format your response as JSON:
       console.error('Database error:', error);
       return NextResponse.json({ 
         success: false, 
-        error: 'Failed to save transcription' 
+        error: `Database error: ${error.message}` 
       }, { status: 500 });
     }
 
@@ -92,34 +96,21 @@ Format your response as JSON:
       data 
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Transcription error:', error);
     return NextResponse.json({ 
       success: false, 
-      error: 'Internal server error' 
+      error: `Internal server error: ${error.message}` 
     }, { status: 500 });
   }
 }
 
-// Helper functions
-async function extractVideoTitle(url: string): Promise<string> {
-  // TODO: Implement proper video metadata extraction
-  // For now, return a simple title
+function extractVideoTitle(url: string): string {
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    return 'YouTube Video';
+  }
+  if (url.includes('spotify.com') || url.includes('anchor.fm')) {
+    return 'Podcast Episode';
+  }
   return `Video from ${new URL(url).hostname}`;
-}
-
-async function getRawTranscript(url: string): Promise<string> {
-  // TODO: Implement actual transcript extraction
-  // This could use youtube-dl, whisper, or other services
-  
-  // Mock transcript for now
-  return `This is a mock transcript for the video at ${url}. In a real implementation, this would be extracted from the video audio using a speech-to-text service like Whisper or similar. The transcript would contain the actual spoken content from the video, including filler words, pauses, and natural speech patterns that would then be cleaned up by Claude AI.`;
-}
-
-function calculateCost(inputTokens: number, outputTokens: number): number {
-  // Claude 3 Sonnet pricing (approximate)
-  const inputCostPerToken = 0.000003; // $3 per million input tokens
-  const outputCostPerToken = 0.000015; // $15 per million output tokens
-  
-  return (inputTokens * inputCostPerToken) + (outputTokens * outputCostPerToken);
 } 
