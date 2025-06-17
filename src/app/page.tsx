@@ -16,13 +16,14 @@ export default function HomePage() {
 
   const loadTranscriptions = async () => {
     try {
-      // TODO: Replace with real API call
-      // const response = await fetch('/api/transcriptions');
-      // const data = await response.json();
-      // setTranscriptions(data.transcriptions);
+      const response = await fetch('/api/transcriptions');
+      const data = await response.json();
       
-      // Mock data for now
-      setTranscriptions([]);
+      if (data.success) {
+        setTranscriptions(data.transcriptions);
+      } else {
+        console.error('Failed to load transcriptions:', data.error);
+      }
     } catch (error) {
       console.error('Failed to load transcriptions:', error);
     }
@@ -45,11 +46,11 @@ export default function HomePage() {
         setTranscriptions([result.data, ...transcriptions]);
       } else {
         console.error('Transcription failed:', result.error);
-        // TODO: Show error toast
+        alert(`Transcription failed: ${result.error}`);
       }
     } catch (error) {
       console.error('Failed to transcribe:', error);
-      // TODO: Show error toast
+      alert('Failed to transcribe video. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -57,12 +58,21 @@ export default function HomePage() {
 
   const handleDelete = async (id: string) => {
     try {
-      // TODO: Add API call to delete from database
-      // await fetch(`/api/transcriptions/${id}`, { method: 'DELETE' });
+      const response = await fetch(`/api/transcriptions/${id}`, { 
+        method: 'DELETE' 
+      });
       
-      setTranscriptions(transcriptions.filter(t => t.id !== id));
+      const result = await response.json();
+      
+      if (result.success) {
+        setTranscriptions(transcriptions.filter(t => t.id !== id));
+      } else {
+        console.error('Failed to delete transcription:', result.error);
+        alert('Failed to delete transcription');
+      }
     } catch (error) {
       console.error('Failed to delete transcription:', error);
+      alert('Failed to delete transcription');
     }
   };
 
