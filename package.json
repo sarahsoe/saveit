@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "check-env": "ts-node scripts/check-env.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.54.0",
@@ -36,6 +37,7 @@
     "eslint": "^9",
     "eslint-config-next": "15.3.3",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "tw-animate-css": "^1.3.4",
     "typescript": "^5"
   }
