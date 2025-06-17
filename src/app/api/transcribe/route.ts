@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { anthropic, CLAUDE_MODEL } from '@/lib/anthropic';
 import { supabase } from '@/lib/supabase';
 import { getVideoTranscript, getTranscriptionCost } from '@/lib/video-processor';
-import { TranscriptionData } from '@/types';
+import { TranscriptionData, ApiResponse, ClaudeResponse } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     const { videoUrl } = await request.json();
     
     if (!videoUrl) {
-      return NextResponse.json({ 
+      return NextResponse.json<ApiResponse<null>>({ 
         success: false, 
         error: 'Video URL is required' 
       }, { status: 400 });
@@ -30,8 +30,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 1: Get transcript
-    const rawTranscript = await getVideoTranscript(videoUrl);
-    console.log('2. Got transcript, length:', rawTranscript?.length);
+    const transcript = await getVideoTranscript(videoUrl);
+    console.log('2. Got transcript, length:', transcript?.length);
     
     // Step 2: Extract video title
     const videoTitle = extractVideoTitle(videoUrl);
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
         content: `Please clean up this video transcript and make it more readable. Remove filler words, fix grammar, and organize it into proper paragraphs. Keep the meaning and content intact.
 
 Original transcript:
-${rawTranscript}
+${transcript}
 
 IMPORTANT: Respond ONLY with valid JSON in this exact format:
 {
@@ -59,7 +59,12 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
 
     console.log('4. Claude responded successfully');
 
-    const result = JSON.parse(cleaningResponse.content[0].text);
+    // Extract the text content from the first content block
+    const contentBlock = cleaningResponse.content[0];
+    if (contentBlock.type !== 'text') {
+      throw new Error('Unexpected response format from Claude API');
+    }
+    const result = JSON.parse(contentBlock.text) as ClaudeResponse;
     console.log('5. Parsed Claude response');
     
     const processingTime = Math.round((Date.now() - startTime) / 1000);
@@ -75,7 +80,7 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
     const transcriptionData: TranscriptionData = {
       video_url: videoUrl,
       video_title: videoTitle,
-      transcript: rawTranscript,
+      transcript,
       cleaned_transcript: result.cleaned_transcript,
       summary: result.summary,
       key_points: result.key_points,
@@ -95,14 +100,14 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
 
     if (error) {
       console.error('❌ Database error:', error);
-      return NextResponse.json({ 
+      return NextResponse.json<ApiResponse<null>>({ 
         success: false, 
         error: `Database error: ${error.message}` 
       }, { status: 500 });
     }
 
     console.log('✅ Success! Data saved:', !!data);
-    return NextResponse.json({ 
+    return NextResponse.json<ApiResponse<TranscriptionData>>({ 
       success: true, 
       data 
     });
@@ -115,7 +120,7 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
       name: err.name
     });
     
-    return NextResponse.json({ 
+    return NextResponse.json<ApiResponse<null>>({ 
       success: false, 
       error: `Internal server error: ${err.message}` 
     }, { status: 500 });

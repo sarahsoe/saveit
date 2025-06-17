@@ -2,23 +2,37 @@ export interface TranscriptionData {
   id?: string;
   created_at?: string;
   video_url: string;
-  video_title?: string;
+  video_title: string;
   video_duration?: number;
-  raw_transcript?: string;
-  cleaned_transcript?: string;
-  summary?: string;
-  key_points?: string[];
-  input_tokens?: number;
-  output_tokens?: number;
-  cost?: number;
-  processing_time_seconds?: number;
-  status?: 'processing' | 'completed' | 'failed';
+  transcript: string;  // Raw transcript from YouTube/Whisper
+  cleaned_transcript: string;
+  summary: string;
+  key_points: string[];
+  input_tokens: number;
+  output_tokens: number;
+  cost: number;
+  processing_time_seconds: number;
+  status: 'processing' | 'completed' | 'failed';
 }
 
-export interface TranscriptionResponse {
+// YouTube transcript response type
+export interface TranscriptItem {
+  text: string;
+  duration: number;
+  offset: number;
+}
+
+export interface ApiResponse<T> {
   success: boolean;
-  data?: TranscriptionData;
+  data?: T;
   error?: string;
+}
+
+// Claude API response types
+export interface ClaudeResponse {
+  cleaned_transcript: string;
+  summary: string;
+  key_points: string[];
 }
 
 export interface TranscriptionListResponse {

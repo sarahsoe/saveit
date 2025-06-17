@@ -1,10 +1,5 @@
 import { YoutubeTranscript } from 'youtube-transcript';
-
-interface TranscriptItem {
-  text: string;
-  duration: number;
-  offset: number;
-}
+import { TranscriptItem } from '@/types';
 
 export async function getVideoTranscript(url: string): Promise<string> {
   try {
@@ -34,24 +29,34 @@ export async function getVideoTranscript(url: string): Promise<string> {
 }
 
 function isYouTubeURL(url: string): boolean {
-  const isYT = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)/.test(url);
-  console.log('🔍 Is YouTube URL?', isYT);
-  return isYT;
+  try {
+    const isYT = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)/.test(url);
+    console.log('🔍 Is YouTube URL?', isYT);
+    return isYT;
+  } catch (error) {
+    console.error('❌ Invalid URL format:', error);
+    return false;
+  }
 }
 
 function isPodcastURL(url: string): boolean {
-  const podcastDomains = [
-    'anchor.fm', 'spotify.com', 'apple.com/podcasts', 'podcasts.google.com',
-    'soundcloud.com', 'buzzsprout.com', 'libsyn.com', 'simplecast.com'
-  ];
-  
-  const audioExtensions = ['.mp3', '.wav', '.m4a', '.aac', '.ogg'];
-  
-  const isPodcast = podcastDomains.some(domain => url.includes(domain)) ||
-         audioExtensions.some(ext => url.includes(ext));
-  
-  console.log('🔍 Is Podcast URL?', isPodcast);
-  return isPodcast;
+  try {
+    const podcastDomains = [
+      'anchor.fm', 'spotify.com', 'apple.com/podcasts', 'podcasts.google.com',
+      'soundcloud.com', 'buzzsprout.com', 'libsyn.com', 'simplecast.com'
+    ];
+    
+    const audioExtensions = ['.mp3', '.wav', '.m4a', '.aac', '.ogg'];
+    
+    const isPodcast = podcastDomains.some(domain => url.includes(domain)) ||
+           audioExtensions.some(ext => url.includes(ext));
+    
+    console.log('🔍 Is Podcast URL?', isPodcast);
+    return isPodcast;
+  } catch (error) {
+    console.error('❌ Invalid URL format:', error);
+    return false;
+  }
 }
 
 async function getYouTubeTranscript(url: string): Promise<string> {
