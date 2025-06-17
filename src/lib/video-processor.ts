@@ -1,5 +1,10 @@
 import { YoutubeTranscript } from 'youtube-transcript';
-// Note: OpenAI import kept for future Whisper implementation
+
+interface TranscriptItem {
+  text: string;
+  duration: number;
+  offset: number;
+}
 
 export async function getVideoTranscript(url: string): Promise<string> {
   try {
@@ -60,7 +65,7 @@ async function getYouTubeTranscript(url: string): Promise<string> {
       return 'No transcript available for this video.';
     }
     
-    const fullText = transcript.map((item: { text: string }) => item.text).join(' ');
+    const fullText = transcript.map((item: TranscriptItem) => item.text).join(' ');
     console.log('📝 Full transcript length:', fullText.length, 'characters');
     
     return fullText;
