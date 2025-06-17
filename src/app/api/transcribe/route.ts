@@ -6,71 +6,76 @@ import { TranscriptionData } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('1. Starting transcription request...');
-    
-    // Step 1: Get request body
+    console.log('🔍 Environment check:');
+    console.log('- ANTHROPIC_API_KEY exists:', !!process.env.ANTHROPIC_API_KEY);
+    console.log('- ANTHROPIC_API_KEY length:', process.env.ANTHROPIC_API_KEY?.length || 0);
+    console.log('- ANTHROPIC_API_KEY starts with sk-ant:', process.env.ANTHROPIC_API_KEY?.startsWith('sk-ant'));
+    console.log('- Claude model:', CLAUDE_MODEL);
+
+    const startTime = Date.now();
     const { videoUrl } = await request.json();
-    console.log('2. Request body:', { videoUrl });
     
     if (!videoUrl) {
-      console.error('3. Missing videoUrl in request');
       return NextResponse.json({ 
         success: false, 
-        error: 'Missing videoUrl parameter' 
+        error: 'Video URL is required' 
       }, { status: 400 });
     }
 
-    // Step 2: Get video transcript
-    console.log('4. Getting video transcript...');
+    console.log('1. Starting transcription for:', videoUrl);
+
+    // Check if API key exists before making Anthropic call
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY environment variable is not set');
+    }
+
+    // Step 1: Get transcript
     const rawTranscript = await getVideoTranscript(videoUrl);
-    console.log('5. Got transcript, length:', rawTranscript?.length);
+    console.log('2. Got transcript, length:', rawTranscript?.length);
     
-    if (!rawTranscript) {
-      console.error('6. No transcript returned');
-      return NextResponse.json({ 
-        success: false, 
-        error: 'No transcript available for this video' 
-      }, { status: 400 });
-    }
-
-    // Step 3: Process with Claude
-    console.log('7. Processing with Claude...');
-    const startTime = Date.now();
+    // Step 2: Extract video title
+    const videoTitle = extractVideoTitle(videoUrl);
     
+    // Step 3: Clean transcript with Claude
+    console.log('3. Calling Claude API...');
     const cleaningResponse = await anthropic.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 4000,
       messages: [{
         role: 'user',
-        content: `Please clean up and format this transcript, then provide a summary and key points. Here's the transcript:\n\n${rawTranscript}`
+        content: `Please clean up this video transcript and make it more readable. Remove filler words, fix grammar, and organize it into proper paragraphs. Keep the meaning and content intact.
+
+Original transcript:
+${rawTranscript}
+
+IMPORTANT: Respond ONLY with valid JSON in this exact format:
+{
+  "cleaned_transcript": "your cleaned transcript here",
+  "summary": "your summary here", 
+  "key_points": ["point 1", "point 2", "point 3"]
+}`
       }]
     });
+
+    console.log('4. Claude responded successfully');
+
+    const result = JSON.parse(cleaningResponse.content[0].text);
+    console.log('5. Parsed Claude response');
     
-    console.log('8. Claude response received');
-    const processingTime = (Date.now() - startTime) / 1000;
-    
-    // Parse Claude's response
-    console.log('9. Parsing Claude response...');
-    const content = cleaningResponse.content[0];
-    if (content.type !== 'text') {
-      throw new Error('Unexpected response type from Claude');
-    }
-    const result = JSON.parse(content.text);
-    console.log('10. Response parsed successfully');
+    const processingTime = Math.round((Date.now() - startTime) / 1000);
     
     // Calculate costs
     const inputTokens = cleaningResponse.usage.input_tokens;
     const outputTokens = cleaningResponse.usage.output_tokens;
     const claudeCost = (inputTokens * 0.000003) + (outputTokens * 0.000015);
-    const transcriptCost = getTranscriptionCost(videoUrl, 5); // Estimate 5 min
+    const transcriptCost = getTranscriptionCost(videoUrl, 5);
     const totalCost = claudeCost + transcriptCost;
 
     // Step 4: Save to database
-    console.log('11. Saving to database...');
     const transcriptionData: TranscriptionData = {
       video_url: videoUrl,
-      video_title: 'YouTube Video', // TODO: Get actual title
-      raw_transcript: rawTranscript,
+      video_title: videoTitle,
+      transcript: rawTranscript,
       cleaned_transcript: result.cleaned_transcript,
       summary: result.summary,
       key_points: result.key_points,
@@ -81,6 +86,7 @@ export async function POST(request: NextRequest) {
       status: 'completed'
     };
 
+    console.log('6. Inserting into database...');
     const { data, error } = await supabase
       .from('transcriptions')
       .insert([transcriptionData])
@@ -88,29 +94,30 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) {
-      console.error('12. Database error:', error);
+      console.error('❌ Database error:', error);
       return NextResponse.json({ 
         success: false, 
         error: `Database error: ${error.message}` 
       }, { status: 500 });
     }
 
-    console.log('13. Successfully saved to database');
+    console.log('✅ Success! Data saved:', !!data);
     return NextResponse.json({ 
       success: true, 
       data 
     });
 
-  } catch (error: any) {
-    console.error('❌ Transcription error:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-      cause: error.cause
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('❌ DETAILED ERROR:', {
+      message: err.message,
+      stack: err.stack,
+      name: err.name
     });
+    
     return NextResponse.json({ 
       success: false, 
-      error: `Internal server error: ${error.message}` 
+      error: `Internal server error: ${err.message}` 
     }, { status: 500 });
   }
 }

@@ -1,10 +1,5 @@
 import { YoutubeTranscript } from 'youtube-transcript';
-import OpenAI from 'openai';
-
-// Only initialize OpenAI if we have an API key
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-}) : null;
+// Note: OpenAI import kept for future Whisper implementation
 
 export async function getVideoTranscript(url: string): Promise<string> {
   try {
@@ -26,9 +21,10 @@ export async function getVideoTranscript(url: string): Promise<string> {
     console.log('🎬 Using Whisper for unknown video type...');
     return await getWhisperTranscript(url);
     
-  } catch (error: any) {
-    console.error('❌ Transcription failed:', error);
-    throw new Error(`Failed to transcribe video: ${error.message}`);
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('❌ Transcription failed:', err);
+    throw new Error(`Failed to transcribe video: ${err.message}`);
   }
 }
 
@@ -39,7 +35,6 @@ function isYouTubeURL(url: string): boolean {
 }
 
 function isPodcastURL(url: string): boolean {
-  // Common podcast domains and file extensions
   const podcastDomains = [
     'anchor.fm', 'spotify.com', 'apple.com/podcasts', 'podcasts.google.com',
     'soundcloud.com', 'buzzsprout.com', 'libsyn.com', 'simplecast.com'
@@ -69,8 +64,9 @@ async function getYouTubeTranscript(url: string): Promise<string> {
     console.log('📝 Full transcript length:', fullText.length, 'characters');
     
     return fullText;
-  } catch (error) {
-    console.error('❌ YouTube transcript error:', error);
+  } catch (error: unknown) {
+    const err = error as Error;
+    console.error('❌ YouTube transcript error:', err);
     console.log('🔄 Falling back to Whisper...');
     return await getWhisperTranscript(url);
   }
