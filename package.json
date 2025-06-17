@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.54.0",
     "@radix-ui/react-slot": "^1.2.3",
     "@supabase/supabase-js": "^2.50.0",
     "anthropic": "^0.0.0",
