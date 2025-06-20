@@ -18,19 +18,15 @@ export default function HomePage() {
     try {
       const response = await fetch('/api/transcriptions');
       const data = await response.json();
-
-      // Debug logs:
-      console.log('API Response:', data);
-      console.log('data.transcriptions:', data.transcriptions);
-      console.log('Type:', typeof data.transcriptions);
-
-      if (data.success) {
+      if (data.success && Array.isArray(data.data)) {
         setTranscriptions(data.data);
       } else {
-        console.error('Failed to load transcriptions:', data.error);
+        console.error('API did not return array:', data);
+        setTranscriptions([]);
       }
     } catch (error) {
       console.error('Failed to load transcriptions:', error);
+      setTranscriptions([]);
     }
   };
 
@@ -96,10 +92,14 @@ export default function HomePage() {
       {/* Transcription Form */}
       <div className="mb-8">
         <TranscriptionForm onTranscribe={handleTranscribe} isLoading={isLoading} />
-        </div>
+      </div>
 
-      {/* Transcriptions List */}
-      <TranscriptionList transcriptions={transcriptions} onDelete={handleDelete} />
+      {/* Transcriptions List - WITH BULLETPROOF GUARDS */}
+      {Array.isArray(transcriptions) ? (
+        <TranscriptionList transcriptions={transcriptions} onDelete={handleDelete} />
+      ) : (
+        <div>Loading transcriptions...</div>
+      )}
     </div>
   );
 }
