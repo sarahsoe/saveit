@@ -1,0 +1,215 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+---
+description: "SaveIt Video Transcription App - Next.js 15, Supabase, Anthropic Claude"
+globs: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+ruleType: "Always"
+---
+
+# SaveIt Video Transcription App Rules
+
+You are an expert in Next.js 15 App Router, TypeScript, Supabase, Anthropic Claude API, YouTube Transcript API, and Vercel deployment.
+
+## Project Context
+SaveIt is a video transcription app that:
+- Takes YouTube URLs and extracts transcripts
+- Uses Anthropic Claude API to clean and summarize transcripts
+- Stores results in Supabase PostgreSQL
+- Tracks processing costs and performance metrics
+- Provides CRUD operations for transcriptions
+
+## Core Architecture Patterns
+
+### API Response Format
+ALWAYS use this exact response structure for ALL API routes:
+```typescript
+// Success Response
+return NextResponse.json({
+  success: true,
+  data: T, // Actual data
+}, { status: 200 });
+
+// Error Response
+return NextResponse.json({
+  success: false,
+  error: "User-friendly error message"
+}, { status: 400 | 422 | 500 | 503 });
+```
+
+### Error Handling Pattern
+```typescript
+} catch (error: unknown) {
+  console.error('Context-specific error:', error);
+  return NextResponse.json({
+    success: false,
+    error: 'User-friendly message'
+  }, { status: 500 });
+}
+```
+
+### State Management Pattern
+ALWAYS initialize React state with proper defaults:
+```typescript
+const [transcriptions, setTranscriptions] = useState<TranscriptionData[]>([]);
+const [isLoading, setIsLoading] = useState(false);
+```
+
+## Technology-Specific Rules
+
+### Next.js 15 App Router
+- Use `src/app/` directory structure
+- Server components by default, `'use client'` only when necessary
+- For dynamic routes: `{ params }: { params: Promise<{ id: string }> }`
+- Always `await params` in Next.js 15: `const { id } = await params;`
+- NO localStorage/sessionStorage in artifacts (not supported)
+
+### Supabase Integration
+- Use `@/lib/supabase` for client imports
+- Always handle null database fields:
+```typescript
+const cleanedData = data?.map(item => ({
+  ...item,
+  key_points: item.key_points || [],
+  video_title: item.video_title || 'Untitled',
+  raw_transcript: item.raw_transcript || '',
+})) || [];
+```
+
+### Database Schema Awareness
+```sql
+-- Our transcriptions table structure:
+CREATE TABLE public.transcriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at timestamptz DEFAULT now(),
+  video_url text NOT NULL,
+  video_title text,
+  video_duration int4,
+  raw_transcript text,
+  cleaned_transcript text,
+  summary text,
+  key_points text[], -- Array of strings
+  input_tokens int4 DEFAULT 0,
+  output_tokens int4 DEFAULT 0,
+  cost numeric DEFAULT 0,
+  processing_time_seconds int4 DEFAULT 0,
+  status text DEFAULT 'processing'
+);
+```
+
+### Anthropic Claude API
+- Use `@anthropic-ai/sdk`
+- Track token usage: `result.usage.input_tokens`, `result.usage.output_tokens`
+- Calculate costs: `(input_tokens * 0.003 + output_tokens * 0.015) / 1000`
+- Use structured prompts for consistent formatting
+
+### TypeScript Interfaces
+ALWAYS use these exact interfaces:
+```typescript
+export interface TranscriptionData {
+  id: string;
+  created_at: string;
+  video_url: string;
+  video_title?: string;
+  video_duration?: number;
+  raw_transcript?: string;
+  cleaned_transcript?: string;
+  summary?: string;
+  key_points?: string[];
+  input_tokens?: number;
+  output_tokens?: number;
+  cost?: number;
+  processing_time_seconds?: number;
+  status?: string;
+}
+
+export interface ApiResponse<T> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+```
+
+## File Organization
+```
+src/
+├── app/
+│   ├── api/
+│   │   ├── transcribe/route.ts          # POST: Process video
+│   │   ├── transcriptions/route.ts      # GET: List all
+│   │   └── transcriptions/[id]/route.ts # DELETE: Remove one
+│   ├── page.tsx                         # Main UI
+│   └── layout.tsx
+├── components/
+│   ├── TranscriptionForm.tsx
+│   └── TranscriptionList.tsx
+├── lib/
+│   ├── supabase.ts                      # DB client
+│   └── video-processor.ts               # Core processing logic
+└── types/
+    └── index.ts                         # Shared interfaces
+```
+
+## Component Patterns
+
+### Loading States
+```typescript
+{transcriptions === undefined ? (
+  <div>Loading...</div>
+) : Array.isArray(transcriptions) ? (
+  <TranscriptionList transcriptions={transcriptions} onDelete={handleDelete} />
+) : (
+  <div>Error loading data</div>
+)}
+```
+
+### Safe Array Operations
+```typescript
+// Always check for array before mapping
+{transcriptions?.map(item => ...) || []}
+
+// Or use default parameter
+function TranscriptionList({ transcriptions = [] }: Props) {
+  // Component logic
+}
+```
+
+## Common Mistakes to Avoid
+1. **DON'T** use `any` type - use `unknown` for errors
+2. **DON'T** use `localStorage` in artifacts (not supported)
+3. **DON'T** forget to await `params` in dynamic routes
+4. **DON'T** use `data.transcriptions` - API returns `data.data`
+5. **DON'T** forget null checks for Supabase responses
+6. **DON'T** use old Next.js patterns (Pages Router)
+
+## Performance & Security
+- Always validate API inputs
+- Use environment variables for secrets
+- Implement proper CORS if needed
+- Handle rate limiting for external APIs
+- Use React.memo for expensive components
+- Implement proper error boundaries
+
+## Deployment (Vercel)
+- Environment variables: `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
+- Build optimization for Next.js 15
+- Handle serverless function timeouts
+- Monitor function costs and performance
+
+## Code Style
+- Use functional components with hooks
+- Prefer `const` over `let`
+- Use descriptive variable names: `isLoading`, `hasError`
+- Comment complex business logic
+- Use early returns for error conditions
+- Keep functions focused and single-purpose
+
+When generating code, ALWAYS follow these patterns exactly. Reference @types/index.ts for interfaces and @lib/supabase.ts for database operations.
+
+# Cursor Rule: newrule.mdc
+# Add your custom Cursor rules below
+
+[example]
+rule = "This is a placeholder rule. Replace with your actual rule content."
