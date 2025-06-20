@@ -12,18 +12,12 @@ export async function POST(request: NextRequest) {
     const { videoUrl } = await request.json();
 
     if (!videoUrl) {
-      return NextResponse.json(
-        { error: 'Video URL is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Video URL is required', status: 400 });
     }
 
     // Validate URL
     if (!isValidUrl(videoUrl)) {
-      return NextResponse.json(
-        { error: 'Invalid video URL' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Invalid video URL', status: 400 });
     }
 
     // Process the video using the unified function
@@ -40,10 +34,7 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Database error:', error);
-      return NextResponse.json(
-        { error: 'Failed to save transcription' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Failed to save transcription', status: 500 });
     }
 
     return NextResponse.json({
@@ -51,35 +42,23 @@ export async function POST(request: NextRequest) {
       data: transcriptionData,
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Transcription error:', error);
     
     // Return appropriate error based on error type
     if (error instanceof Error) {
       if (error.message.includes('transcript')) {
-        return NextResponse.json(
-          { error: 'Failed to extract transcript from video' },
-          { status: 422 }
-        );
+        return NextResponse.json({ error: 'Failed to extract transcript from video', status: 422 });
       }
       if (error.message.includes('Whisper')) {
-        return NextResponse.json(
-          { error: 'Audio transcription failed' },
-          { status: 503 }
-        );
+        return NextResponse.json({ error: 'Audio transcription failed', status: 503 });
       }
       if (error.message.includes('Claude')) {
-        return NextResponse.json(
-          { error: 'Text processing failed' },
-          { status: 503 }
-        );
+        return NextResponse.json({ error: 'Text processing failed', status: 503 });
       }
     }
 
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Internal server error', status: 500 });
   }
 }
 

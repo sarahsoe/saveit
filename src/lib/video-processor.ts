@@ -46,7 +46,7 @@ export async function processVideo(
       status,
     };
     return result;
-  } catch (error) {
+  } catch (error: unknown) {
     status = 'failed';
     console.error('Error processing video:', error);
     throw error;
@@ -60,7 +60,7 @@ export async function getVideoTranscript(url: string): Promise<string | null> {
       return transcript.map(item => item.text).join(' ');
     }
     throw new Error('Only YouTube videos are currently supported');
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error getting transcript:', error);
     return null;
   }
@@ -84,7 +84,7 @@ async function getVideoMetadata(url: string): Promise<{ video_title: string; vid
       video_title: 'Unknown Video',
       video_duration: 0,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error getting video metadata:', error);
     return {
       video_title: 'Unknown Video',
@@ -104,7 +104,7 @@ async function processWithClaude(raw_transcript: string, video_title: string) {
   if ('text' in contentBlock) {
     try {
       return JSON.parse(contentBlock.text);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error parsing Claude response:', error);
       throw new Error('Failed to process transcript with Claude');
     }
