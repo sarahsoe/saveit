@@ -77,6 +77,9 @@ export default function HomePage() {
     }
   };
 
+  // Defensive log before rendering the list
+  console.log('HomePage transcriptions state:', transcriptions, typeof transcriptions, Array.isArray(transcriptions));
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       {/* Header */}

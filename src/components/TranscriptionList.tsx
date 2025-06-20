@@ -11,7 +11,13 @@ interface TranscriptionListProps {
   onDelete: (id: string) => void;
 }
 
-export default function TranscriptionList({ transcriptions, onDelete }: TranscriptionListProps) {
+export default function TranscriptionList({ transcriptions = [], onDelete }: TranscriptionListProps) {
+  console.log('TranscriptionList received:', transcriptions, typeof transcriptions, Array.isArray(transcriptions));
+
+  if (!Array.isArray(transcriptions)) {
+    return <div>No transcriptions available</div>;
+  }
+
   if (transcriptions.length === 0) {
     return (
       <Card className="text-center py-12 bg-white/50 dark:bg-slate-800/50 backdrop-blur border-dashed">
@@ -50,4 +56,4 @@ export default function TranscriptionList({ transcriptions, onDelete }: Transcri
       </div>
     </div>
   );
-} 
+}
