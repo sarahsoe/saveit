@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Save to database
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('transcriptions')
       .insert([transcriptionData])
       .select()

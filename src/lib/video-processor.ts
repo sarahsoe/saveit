@@ -6,11 +6,8 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-export interface ProcessingOptions {}
-
 export async function processVideo(
-  video_url: string,
-  options: ProcessingOptions = {}
+  video_url: string
 ): Promise<TranscriptionData> {
   const startTime = Date.now();
   let status: 'processing' | 'completed' | 'failed' = 'processing';
