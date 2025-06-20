@@ -1,13 +1,19 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { ApiResponse } from '@/types';
 
 export async function DELETE(
-  request: Request,
-  context: { params: { id: string } }
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = context.params;
+    const { id } = await context.params;
+    if (!id) {
+      return NextResponse.json<ApiResponse<null>>({
+        success: false,
+        error: 'No transcription ID provided'
+      }, { status: 400 });
+    }
     
     const { error } = await supabase
       .from('transcriptions')
@@ -25,11 +31,10 @@ export async function DELETE(
     return NextResponse.json<ApiResponse<null>>({ success: true });
 
   } catch (error: unknown) {
-    const err = error as Error;
-    console.error('API error:', err);
-    return NextResponse.json<ApiResponse<null>>({
-      success: false,
-      error: 'Internal server error'
-    }, { status: 500 });
+    console.error('Error deleting transcription:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete transcription' },
+      { status: 500 }
+    );
   }
 } 

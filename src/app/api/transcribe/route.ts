@@ -21,9 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Process the video using the unified function
-    const transcriptionData = await processVideo(videoUrl, {
-      useWhisperFallback: true,
-    });
+    const transcriptionData = await processVideo(videoUrl);
 
     // Save to database
     const { error } = await supabase
@@ -49,9 +47,6 @@ export async function POST(request: NextRequest) {
     if (error instanceof Error) {
       if (error.message.includes('transcript')) {
         return NextResponse.json({ error: 'Failed to extract transcript from video', status: 422 });
-      }
-      if (error.message.includes('Whisper')) {
-        return NextResponse.json({ error: 'Audio transcription failed', status: 503 });
       }
       if (error.message.includes('Claude')) {
         return NextResponse.json({ error: 'Text processing failed', status: 503 });
