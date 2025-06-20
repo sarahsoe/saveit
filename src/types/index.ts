@@ -4,7 +4,7 @@ export interface TranscriptionData {
   video_url: string;
   video_title: string;
   video_duration?: number;
-  transcript: string;  // Raw transcript from YouTube/Whisper
+  raw_transcript: string;  // Changed from transcript to match DB
   cleaned_transcript: string;
   summary: string;
   key_points: string[];

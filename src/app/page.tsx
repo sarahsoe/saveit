@@ -91,7 +91,7 @@ export default function HomePage() {
       {/* Transcription Form */}
       <div className="mb-8">
         <TranscriptionForm onTranscribe={handleTranscribe} isLoading={isLoading} />
-      </div>
+        </div>
 
       {/* Transcriptions List */}
       <TranscriptionList transcriptions={transcriptions} onDelete={handleDelete} />

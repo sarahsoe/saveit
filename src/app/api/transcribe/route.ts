@@ -1,97 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { anthropic, CLAUDE_MODEL } from '@/lib/anthropic';
-import { supabase } from '@/lib/supabase';
-import { getVideoTranscript, getTranscriptionCost, extractVideoTitle } from '@/lib/video-processor';
-import { TranscriptionData, ApiResponse, ClaudeResponse } from '@/types';
+import { processVideo } from '@/lib/video-processor';
+import { createClient } from '@supabase/supabase-js';
 
-export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse<TranscriptionData>>> {
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+export async function POST(request: NextRequest) {
   try {
-    console.log('🔍 Environment check:');
-    console.log('- ANTHROPIC_API_KEY exists:', !!process.env.ANTHROPIC_API_KEY);
-    console.log('- ANTHROPIC_API_KEY length:', process.env.ANTHROPIC_API_KEY?.length || 0);
-    console.log('- ANTHROPIC_API_KEY starts with sk-ant:', process.env.ANTHROPIC_API_KEY?.startsWith('sk-ant'));
-    console.log('- Claude model:', CLAUDE_MODEL);
+    const { videoUrl } = await request.json();
 
-    const startTime = Date.now();
-    const { videoUrl } = await request.json() as { videoUrl: string };
-    
     if (!videoUrl) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Video URL is required' 
-      }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Video URL is required' },
+        { status: 400 }
+      );
     }
 
-    console.log('1. Starting transcription for:', videoUrl);
-
-    // Check if API key exists before making Anthropic call
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error('ANTHROPIC_API_KEY environment variable is not set');
+    // Validate URL
+    if (!isValidUrl(videoUrl)) {
+      return NextResponse.json(
+        { error: 'Invalid video URL' },
+        { status: 400 }
+      );
     }
 
-    // Step 1: Get transcript
-    const rawTranscript = await getVideoTranscript(videoUrl);
-    console.log('2. Got transcript, length:', rawTranscript?.length);
-    
-    // Step 2: Extract video title
-    const videoTitle = extractVideoTitle(videoUrl);
-    
-    // Step 3: Clean transcript with Claude
-    console.log('3. Calling Claude API...');
-    const cleaningResponse = await anthropic.messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: `Please clean up this video transcript and make it more readable. Remove filler words, fix grammar, and organize it into proper paragraphs. Keep the meaning and content intact.
-
-Original transcript:
-${rawTranscript}
-
-IMPORTANT: Respond ONLY with valid JSON in this exact format:
-{
-  "cleaned_transcript": "your cleaned transcript here",
-  "summary": "your summary here", 
-  "key_points": ["point 1", "point 2", "point 3"]
-}`
-      }]
+    // Process the video using the unified function
+    const transcriptionData = await processVideo(videoUrl, {
+      useWhisperFallback: true,
     });
 
-    console.log('4. Claude responded successfully');
-
-    // Extract the text content from the first content block
-    const contentBlock = cleaningResponse.content[0];
-    if (contentBlock.type !== 'text') {
-      throw new Error('Unexpected response format from Claude API');
-    }
-    const result: ClaudeResponse = JSON.parse(contentBlock.text);
-    console.log('5. Parsed Claude response');
-    
-    const processingTime = Math.round((Date.now() - startTime) / 1000);
-    
-    // Calculate costs
-    const inputTokens = cleaningResponse.usage.input_tokens;
-    const outputTokens = cleaningResponse.usage.output_tokens;
-    const claudeCost = (inputTokens * 0.000003) + (outputTokens * 0.000015);
-    const transcriptCost = getTranscriptionCost(videoUrl, 5);
-    const totalCost = claudeCost + transcriptCost;
-
-    // Step 4: Save to database
-    const transcriptionData: TranscriptionData = {
-      video_url: videoUrl,
-      video_title: videoTitle,
-      transcript: rawTranscript,
-      cleaned_transcript: result.cleaned_transcript,
-      summary: result.summary,
-      key_points: result.key_points,
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      cost: totalCost,
-      processing_time_seconds: processingTime,
-      status: 'completed'
-    };
-
-    console.log('6. Inserting into database...');
+    // Save to database
     const { data, error } = await supabase
       .from('transcriptions')
       .insert([transcriptionData])
@@ -99,30 +39,59 @@ IMPORTANT: Respond ONLY with valid JSON in this exact format:
       .single();
 
     if (error) {
-      console.error('❌ Database error:', error);
-      return NextResponse.json({ 
-        success: false, 
-        error: `Database error: ${error.message}` 
-      }, { status: 500 });
+      console.error('Database error:', error);
+      return NextResponse.json(
+        { error: 'Failed to save transcription' },
+        { status: 500 }
+      );
     }
 
-    console.log('✅ Success! Data saved:', !!data);
-    return NextResponse.json({ 
-      success: true, 
-      data 
+    return NextResponse.json({
+      success: true,
+      data: transcriptionData,
     });
 
-  } catch (error: unknown) {
-    const err = error as Error;
-    console.error('❌ DETAILED ERROR:', {
-      message: err.message,
-      stack: err.stack,
-      name: err.name
-    });
+  } catch (error) {
+    console.error('Transcription error:', error);
     
-    return NextResponse.json({ 
-      success: false, 
-      error: `Internal server error: ${err.message}` 
-    }, { status: 500 });
+    // Return appropriate error based on error type
+    if (error instanceof Error) {
+      if (error.message.includes('transcript')) {
+        return NextResponse.json(
+          { error: 'Failed to extract transcript from video' },
+          { status: 422 }
+        );
+      }
+      if (error.message.includes('Whisper')) {
+        return NextResponse.json(
+          { error: 'Audio transcription failed' },
+          { status: 503 }
+        );
+      }
+      if (error.message.includes('Claude')) {
+        return NextResponse.json(
+          { error: 'Text processing failed' },
+          { status: 503 }
+        );
+      }
+    }
+
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+function isValidUrl(url: string): boolean {
+  try {
+    new URL(url);
+    // Add specific validation for supported platforms
+    return url.includes('youtube.com') || 
+           url.includes('youtu.be') || 
+           url.includes('podcast') ||
+           url.includes('spotify.com');
+  } catch {
+    return false;
   }
 } 
