@@ -21,27 +21,72 @@ export async function POST(request: NextRequest) {
     }
 
     // Process the video using the unified function
-    const transcriptionData = await processVideo(videoUrl);
+    const result = await processVideo(videoUrl);
+    const {
+      video_title: videoTitle,
+      video_duration: duration,
+      raw_transcript: rawTranscript,
+      cleaned_transcript: cleanedTranscript,
+      summary,
+      key_points: keyPoints,
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      cost,
+      processing_time_seconds: processingTime,
+      status
+    } = result;
 
     // Save to database
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('transcriptions')
-      .insert([transcriptionData])
+      .insert({
+        video_url: videoUrl,
+        video_title: videoTitle || '',
+        video_duration: duration || 0,
+        raw_transcript: rawTranscript || '',
+        cleaned_transcript: cleanedTranscript || '',
+        summary: summary || '',
+        key_points: keyPoints || [],
+        input_tokens: inputTokens || 0,
+        output_tokens: outputTokens || 0,
+        cost: cost || 0,
+        processing_time_seconds: processingTime || 0,
+        status: status || 'completed'
+      })
       .select()
       .single();
 
     if (error) {
-      console.error('Database error:', error);
-      return NextResponse.json({ error: 'Failed to save transcription', status: 500 });
+      console.error('Database insert error:', error);
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to save transcription'
+      }, { status: 500 });
     }
+
+    // Return the same safe format
+    const safeResponse = {
+      ...data,
+      key_points: data.key_points || [],
+      video_title: data.video_title || '',
+      raw_transcript: data.raw_transcript || '',
+      cleaned_transcript: data.cleaned_transcript || '',
+      summary: data.summary || '',
+      status: data.status || 'completed',
+      video_duration: data.video_duration || 0,
+      input_tokens: data.input_tokens || 0,
+      output_tokens: data.output_tokens || 0,
+      processing_time_seconds: data.processing_time_seconds || 0,
+      cost: data.cost || 0,
+    };
 
     return NextResponse.json({
       success: true,
-      data: transcriptionData,
+      data: safeResponse
     });
 
   } catch (error: unknown) {
-    console.error('Transcription error:', error);
+    console.error('Transcribe error:', error);
     
     // Return appropriate error based on error type
     if (error instanceof Error) {

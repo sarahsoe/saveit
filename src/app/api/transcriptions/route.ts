@@ -9,28 +9,41 @@ export async function GET() {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase error:', error);
+      return NextResponse.json({
+        success: false,
+        error: 'Failed to fetch transcriptions'
+      }, { status: 500 });
+    }
 
-    // Clean up the data to handle nulls
-    const cleanedData = data?.map(item => ({
+    // CRITICAL: Convert all null values to safe defaults
+    const safeData = (data || []).map(item => ({
       ...item,
-      key_points: item.key_points || [],           // ← Convert null to empty array
-      video_title: item.video_title || 'Untitled',
+      key_points: item.key_points || [],
+      video_title: item.video_title || '',
       raw_transcript: item.raw_transcript || '',
       cleaned_transcript: item.cleaned_transcript || '',
-      summary: item.summary || ''
-    })) || [];
+      summary: item.summary || '',
+      status: item.status || 'processing',
+      video_duration: item.video_duration || 0,
+      input_tokens: item.input_tokens || 0,
+      output_tokens: item.output_tokens || 0,
+      processing_time_seconds: item.processing_time_seconds || 0,
+      cost: item.cost || 0,
+    }));
+
+    console.log('Cleaned data sample:', safeData[0]);
 
     return NextResponse.json({
       success: true,
-      data: cleanedData
+      data: safeData
     });
   } catch (error: unknown) {
-    const err = error as Error;
-    console.error('API error:', err);
-    return NextResponse.json<ApiResponse<null>>({ 
-      success: false, 
-      error: 'Internal server error' 
+    console.error('API error:', error);
+    return NextResponse.json({
+      success: false,
+      error: 'Internal server error'
     }, { status: 500 });
   }
 } 
