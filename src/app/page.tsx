@@ -18,9 +18,14 @@ export default function HomePage() {
     try {
       const response = await fetch('/api/transcriptions');
       const data = await response.json();
-      
+
+      // Debug logs:
+      console.log('API Response:', data);
+      console.log('data.transcriptions:', data.transcriptions);
+      console.log('Type:', typeof data.transcriptions);
+
       if (data.success) {
-        setTranscriptions(data.transcriptions);
+        setTranscriptions(data.data);
       } else {
         console.error('Failed to load transcriptions:', data.error);
       }
