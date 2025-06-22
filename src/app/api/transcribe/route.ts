@@ -4,7 +4,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 
 // Import ONLY Node.js compatible methods
-import { getWhisperTranscript } from '@/lib/whisper-transcript';
 import { tryEnhancedNodeMethods, tryYoutubeDlExec } from '@/lib/enhanced-nodejs-transcript';
 
 const supabase = createClient(
@@ -64,6 +63,61 @@ async function getYouTubeTranscript(videoId: string) {
   }
 }
 
+// FREE Working Audio Extraction using Invidious API
+async function getWorkingAudioUrl(videoId: string): Promise<{ audioUrl: string, title: string, duration: number }> {
+  // List of working Invidious instances (as of 2025)
+  const invidious_instances = [
+    'https://yewtu.be',
+    'https://inv.nadeko.net',
+    'https://invidious.nerdvpn.de'
+  ];
+  
+  for (const instance of invidious_instances) {
+    try {
+      console.log(`🔧 Trying Invidious instance: ${instance}`);
+      
+      // Get video data from Invidious API
+      const response = await fetch(`${instance}/api/v1/videos/${videoId}`, {
+        headers: {
+          'User-Agent': 'SaveIt-Transcript-App/1.0'
+        }
+      });
+      
+      if (!response.ok) {
+        console.log(`❌ Instance ${instance} failed: ${response.status}`);
+        continue;
+      }
+      
+      const data = await response.json();
+      
+      // Find audio-only formats
+      const audioFormats = data.adaptiveFormats?.filter((format: any) => 
+        format.type?.includes('audio') && format.url
+      ) || [];
+      
+      // Prefer high-quality audio
+      const bestAudio = audioFormats.find((format: any) => 
+        format.type?.includes('audio/mp4') || format.type?.includes('audio/webm')
+      ) || audioFormats[0];
+      
+      if (bestAudio && bestAudio.url) {
+        console.log(`✅ Found audio URL via ${instance}`);
+        return {
+          audioUrl: bestAudio.url,
+          title: data.title || 'YouTube Video',
+          duration: Number(data.lengthSeconds) || 600
+        };
+      }
+      
+    } catch (error) {
+      console.log(`❌ Instance ${instance} error:`, error);
+      continue;
+    }
+  }
+  
+  throw new Error('All Invidious instances failed');
+}
+
 // 🎯 WORKING METHOD 2: Whisper with Direct MP3 (Works 95% of the time)
 async function getWhisperTranscript(videoUrl: string) {
   try {
@@ -73,13 +127,10 @@ async function getWhisperTranscript(videoUrl: string) {
     
     console.log('🎤 Trying Whisper transcription...');
     
-    // Get video info first
+    // Get video info and audio using Invidious
     const videoId = extractYouTubeId(videoUrl)!;
-    const videoInfo = await getVideoInfo(videoId);
-    console.log(`📹 Video: ${videoInfo.title}`);
-    
-    // Get audio using a working method
-    const audioUrl = await getWorkingAudioUrl(videoId);
+    const { audioUrl, title, duration } = await getWorkingAudioUrl(videoId);
+    console.log(`📹 Video: ${title}`);
     console.log('🎵 Got audio URL, fetching...');
     
     // Fetch audio with size limit
@@ -87,7 +138,7 @@ async function getWhisperTranscript(videoUrl: string) {
     console.log(`📊 Audio size: ${(audioFile.size / 1024 / 1024).toFixed(1)}MB`);
     
     // Estimate cost
-    const estimatedMinutes = Math.min(videoInfo.duration / 60, 25); // Cap at 25 minutes
+    const estimatedMinutes = Math.min(duration / 60, 25); // Cap at 25 minutes
     const estimatedCost = estimatedMinutes * 0.006;
     console.log(`💰 Estimated cost: $${estimatedCost.toFixed(3)}`);
     
@@ -108,8 +159,8 @@ async function getWhisperTranscript(videoUrl: string) {
     return {
       success: true,
       transcript: transcription,
-      title: videoInfo.title,
-      source: 'whisper_direct',
+      title: title,
+      source: 'whisper_invidious',
       cost: estimatedCost
     };
     
@@ -134,88 +185,6 @@ async function getVideoInfo(videoId: string) {
       title: 'YouTube Video',
       duration: 600
     };
-  }
-}
-
-// Get audio URL using the working method that actually works in Vercel
-async function getWorkingAudioUrl(videoId: string): Promise<string> {
-  try {
-    // Method 1: Try the iframe approach
-    console.log('🔧 Method 1: Iframe extraction...');
-    const iframeUrl = await tryIframeExtraction(videoId);
-    if (iframeUrl) {
-      console.log('✅ Iframe method worked');
-      return iframeUrl;
-    }
-  } catch (error) {
-    console.log('❌ Iframe method failed:', error);
-  }
-  
-  try {
-    // Method 2: Use a working external service
-    console.log('🔧 Method 2: External service...');
-    const serviceUrl = await tryExternalService(videoId);
-    if (serviceUrl) {
-      console.log('✅ External service worked');
-      return serviceUrl;
-    }
-  } catch (error) {
-    console.log('❌ External service failed:', error);
-  }
-  
-  throw new Error('All audio extraction methods failed');
-}
-
-async function tryIframeExtraction(videoId: string): Promise<string | null> {
-  try {
-    // This is a simplified approach that works in serverless
-    const response = await fetch(`https://www.youtube.com/embed/${videoId}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    
-    const html = await response.text();
-    
-    // Look for audio stream URLs in the embed page
-    const audioUrlMatch = html.match(/"url":"([^"]*audio[^"]*)"/);
-    if (audioUrlMatch) {
-      return decodeURIComponent(audioUrlMatch[1].replace(/\\u0026/g, '&'));
-    }
-    
-    return null;
-  } catch (error) {
-    console.log('Iframe extraction error:', error);
-    return null;
-  }
-}
-
-async function tryExternalService(videoId: string): Promise<string | null> {
-  try {
-    // Use a reliable third-party service for audio extraction
-    // Note: This is where you'd integrate with a working service
-    // For now, we'll use a placeholder that demonstrates the structure
-    
-    const serviceResponse = await fetch(`https://api.example-service.com/audio?id=${videoId}`, {
-      headers: {
-        'User-Agent': 'SaveIt-App/1.0'
-      }
-    });
-    
-    if (serviceResponse.ok) {
-      const data = await serviceResponse.json();
-      return data.audioUrl;
-    }
-    
-    return null;
-  } catch (error) {
-    // For now, return a working test URL
-    // In production, you'd need to implement a real service
-    throw new Error('External service not implemented yet');
   }
 }
 
