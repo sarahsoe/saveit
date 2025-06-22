@@ -2,6 +2,7 @@
 import { YoutubeTranscript } from 'youtube-transcript';
 import { spawn } from 'child_process';
 import path from 'path';
+import { getWhisperTranscript } from './whisper-transcript';
 
 interface PythonTranscriptResult {
   success: boolean;
@@ -90,8 +91,24 @@ export async function getTranscriptWithFallback(videoUrl: string) {
       throw new Error(pythonResult.error || 'Python method failed');
     }
   } catch (pythonError) {
-    console.log('❌ Python method also failed');
-    throw new Error(`All methods failed. Node.js and Python.`);
+    console.log('❌ Python method also failed, trying Whisper...');
+  }
+  try {
+    const whisperResult = await getWhisperTranscript(videoUrl);
+    if (whisperResult.success && whisperResult.transcript) {
+      console.log('✅ Whisper method succeeded');
+      return {
+        transcript: whisperResult.transcript,
+        title: whisperResult.title || 'YouTube Video',
+        source: 'whisper',
+        success: true
+      };
+    } else {
+      throw new Error(whisperResult.error || 'Whisper method failed');
+    }
+  } catch (whisperError) {
+    console.log('❌ Whisper method also failed');
+    throw new Error('All methods failed. Node.js, Python, and Whisper.');
   }
 }
 
