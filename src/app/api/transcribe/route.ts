@@ -38,7 +38,7 @@ async function getTranscriptViaLibrary(videoId: string) {
   }
 }
 
-// 3-Tier Universal Transcript Function
+// Enhanced version of your existing system - keeps everything but makes it Vercel-compatible
 async function getUniversalTranscript(videoUrl: string) {
   const videoId = extractYouTubeId(videoUrl);
   if (!videoId) {
@@ -46,86 +46,175 @@ async function getUniversalTranscript(videoUrl: string) {
   }
   
   const normalizedUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  console.log(`🎬 Starting 3-tier transcript extraction for: ${videoId}`);
+  console.log(`🎬 Starting enhanced 3-tier transcript extraction for: ${videoId}`);
   
-  const errors: string[] = [];
+  let errors: string[] = [];
   
-  // 🥇 TIER 1: Node.js Methods (Fastest, Free)
-  console.log('🚀 TIER 1: Trying Node.js transcript methods...');
+  // 🥇 TIER 1: Enhanced Node.js Methods (Fastest, Free)
+  console.log('🚀 TIER 1: Enhanced Node.js transcript methods...');
   try {
-    const nodeResult = await getTranscriptViaLibrary(videoId);
+    const nodeResult = await tryEnhancedNodeMethods(videoId);
     if (nodeResult.transcript && nodeResult.transcript.length > 100) {
-      console.log('✅ TIER 1 SUCCESS: Node.js method worked!');
+      console.log('✅ TIER 1 SUCCESS: Enhanced Node.js method worked!');
       return {
         transcript: nodeResult.transcript,
-        title: 'YouTube Video', // Will be enhanced by metadata
-        source: 'tier1_nodejs',
+        title: nodeResult.title || 'YouTube Video',
+        source: 'tier1_enhanced_nodejs',
         cost: 0,
         tier: 1
       };
     }
   } catch (error) {
-    const errorMsg = `Tier 1 (Node.js): ${error}`;
+    const errorMsg = `Tier 1 (Enhanced Node.js): ${error}`;
     console.log('❌ TIER 1 FAILED:', errorMsg);
     errors.push(errorMsg);
   }
   
-  // 🥈 TIER 2: Python Methods (Medium Speed, Free)
-  console.log('🐍 TIER 2: Trying Python transcript methods...');
+  // 🥈 TIER 2: Node.js youtube-dl-exec (Medium Speed, Free, Vercel Compatible)
+  console.log('🔧 TIER 2: Node.js youtube-dl-exec method...');
   try {
-    const pythonResult = await getPythonTranscript(videoUrl);
-    if (pythonResult.success && pythonResult.transcript && pythonResult.transcript.length > 100) {
-      console.log('✅ TIER 2 SUCCESS: Python method worked!');
+    const youtubeDlResult = await tryYoutubeDlExec(videoUrl);
+    if (youtubeDlResult.transcript && youtubeDlResult.transcript.length > 100) {
+      console.log('✅ TIER 2 SUCCESS: youtube-dl-exec method worked!');
       return {
-        transcript: pythonResult.transcript,
-        title: pythonResult.title || 'YouTube Video',
-        source: `tier2_python_${pythonResult.method}`,
+        transcript: youtubeDlResult.transcript,
+        title: youtubeDlResult.title || 'YouTube Video',
+        source: 'tier2_youtubedl_exec',
         cost: 0,
         tier: 2
       };
-    } else {
-      throw new Error(pythonResult.error || 'Python method returned insufficient content');
     }
   } catch (error) {
-    const errorMsg = `Tier 2 (Python): ${error}`;
+    const errorMsg = `Tier 2 (youtube-dl-exec): ${error}`;
     console.log('❌ TIER 2 FAILED:', errorMsg);
     errors.push(errorMsg);
   }
   
-  // 🥉 TIER 3: Whisper AI (Slowest, Paid, but Universal)
-  console.log('🎤 TIER 3: Trying Whisper AI transcription...');
-  
-  // Check if yt-dlp is available first
-  const ytdlpAvailable = await checkYtDlpAvailable();
-  if (!ytdlpAvailable) {
-    const errorMsg = 'Tier 3 (Whisper): yt-dlp not available (required for audio extraction)';
+  // 🥉 TIER 3: Whisper AI (Universal, Paid, Always Works)
+  console.log('🎤 TIER 3: Whisper AI transcription...');
+  try {
+    const whisperResult = await getWhisperTranscript(normalizedUrl);
+    if (whisperResult.success && whisperResult.transcript) {
+      console.log(`✅ TIER 3 SUCCESS: Whisper AI worked! Cost: $${whisperResult.cost?.toFixed(3)}`);
+      return {
+        transcript: whisperResult.transcript,
+        title: whisperResult.title || 'YouTube Video',
+        source: 'tier3_whisper_ai',
+        cost: whisperResult.cost || 0,
+        tier: 3
+      };
+    } else {
+      throw new Error(whisperResult.error || 'Whisper method failed');
+    }
+  } catch (error) {
+    const errorMsg = `Tier 3 (Whisper): ${error}`;
     console.log('❌ TIER 3 FAILED:', errorMsg);
     errors.push(errorMsg);
-  } else {
-    try {
-      const whisperResult = await getWhisperTranscript(normalizedUrl);
-      if (whisperResult.success && whisperResult.transcript) {
-        console.log(`✅ TIER 3 SUCCESS: Whisper AI worked! Cost: $${whisperResult.cost?.toFixed(3)}`);
-        return {
-          transcript: whisperResult.transcript,
-          title: whisperResult.title || 'YouTube Video',
-          source: 'tier3_whisper_ai',
-          cost: whisperResult.cost || 0,
-          tier: 3
-        };
-      } else {
-        throw new Error(whisperResult.error || 'Whisper method failed');
-      }
-    } catch (error) {
-      const errorMsg = `Tier 3 (Whisper): ${error}`;
-      console.log('❌ TIER 3 FAILED:', errorMsg);
-      errors.push(errorMsg);
-    }
   }
   
   // 💥 ALL TIERS FAILED
   console.log('💥 ALL TIERS FAILED - No transcript available');
   throw new Error(`All transcript methods failed:\n${errors.join('\n')}`);
+}
+
+// Enhanced Tier 1: Multiple Node.js approaches
+async function tryEnhancedNodeMethods(videoId: string) {
+  // Method 1.1: Standard youtube-transcript
+  try {
+    const { YoutubeTranscript } = await import('youtube-transcript');
+    const transcriptArray = await YoutubeTranscript.fetchTranscript(videoId);
+    const transcript = transcriptArray.map(item => item.text).join(' ');
+    
+    if (transcript && transcript.length > 50) {
+      return { transcript, title: null, source: 'youtube_transcript_standard' };
+    }
+  } catch (error) {
+    console.log('Method 1.1 failed:', error);
+  }
+
+  // Method 1.2: Try different language codes
+  try {
+    const { YoutubeTranscript } = await import('youtube-transcript');
+    const languages = ['en', 'en-US', 'en-GB', 'auto'];
+    
+    for (const lang of languages) {
+      try {
+        const transcriptArray = await YoutubeTranscript.fetchTranscript(videoId, { lang });
+        const transcript = transcriptArray.map(item => item.text).join(' ');
+        
+        if (transcript && transcript.length > 50) {
+          return { transcript, title: null, source: `youtube_transcript_${lang}` };
+        }
+      } catch (langError) {
+        continue;
+      }
+    }
+  } catch (error) {
+    console.log('Method 1.2 failed:', error);
+  }
+
+  throw new Error('All enhanced Node.js methods failed');
+}
+
+// New Tier 2: youtube-dl-exec (Vercel compatible)
+async function tryYoutubeDlExec(videoUrl: string) {
+  try {
+    // This package works in Vercel without system dependencies
+    const youtubeDl = await import('youtube-dl-exec');
+    
+    // Try to get subtitle information
+    const info = await youtubeDl.default(videoUrl, {
+      dumpJson: true,
+      writeAutoSub: true,
+      subLang: 'en',
+      skipDownload: true
+    });
+    
+    // Cast info to any to access dynamic properties
+    const infoAny = info as any;
+    // Extract any available subtitle text from the info
+    if (infoAny.requested_subtitles && infoAny.requested_subtitles.en) {
+      // Try to get subtitle content
+      const subUrl = infoAny.requested_subtitles.en.url;
+      const response = await fetch(subUrl);
+      const subContent = await response.text();
+      
+      // Parse subtitle content (VTT or SRT format)
+      const transcript = parseSubtitleContent(subContent);
+      
+      if (transcript && transcript.length > 50) {
+        return {
+          transcript,
+          title: infoAny.title || 'YouTube Video',
+          source: 'youtubedl_subtitles'
+        };
+      }
+    }
+    
+    throw new Error('No subtitles found via youtube-dl-exec');
+  } catch (error) {
+    throw new Error(`youtube-dl-exec failed: ${error}`);
+  }
+}
+
+function parseSubtitleContent(content: string): string {
+  // Simple parser for VTT/SRT subtitle formats
+  try {
+    // Remove timestamps and formatting
+    const lines = content.split('\n');
+    const textLines = lines.filter(line => {
+      // Filter out timestamp lines and empty lines
+      return line.trim() && 
+             !line.includes('-->') && 
+             !line.match(/^\d+$/) &&
+             !line.startsWith('WEBVTT') &&
+             !line.startsWith('NOTE');
+    });
+    
+    return textLines.join(' ').trim();
+  } catch (error) {
+    return '';
+  }
 }
 
 export async function POST(request: NextRequest) {
