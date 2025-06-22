@@ -18,14 +18,6 @@ function extractYouTubeId(url: string): string | null {
   return null;
 }
 
-function validateYouTubeUrl(input: string): string {
-  const videoId = extractYouTubeId(input);
-  if (!videoId) {
-    throw new Error('Invalid YouTube URL. Please provide a valid YouTube video URL.');
-  }
-  return `https://www.youtube.com/watch?v=${videoId}`;
-}
-
 async function getTranscriptViaLibrary(videoId: string) {
   // Your existing Node.js transcript code
   try {
@@ -56,7 +48,7 @@ async function getUniversalTranscript(videoUrl: string) {
   const normalizedUrl = `https://www.youtube.com/watch?v=${videoId}`;
   console.log(`🎬 Starting 3-tier transcript extraction for: ${videoId}`);
   
-  let errors: string[] = [];
+  const errors: string[] = [];
   
   // 🥇 TIER 1: Node.js Methods (Fastest, Free)
   console.log('🚀 TIER 1: Trying Node.js transcript methods...');
@@ -155,12 +147,13 @@ export async function POST(request: NextRequest) {
       transcriptResult = await getUniversalTranscript(videoUrl);
       console.log(`📝 Success via ${transcriptResult.source} (Tier ${transcriptResult.tier})`);
       console.log(`💰 Cost: $${transcriptResult.cost?.toFixed(3) || '0.000'}`);
-    } catch (error) {
-      console.error('All transcript methods failed:', error);
+    } catch (_error) {
+      const errorMsg = _error instanceof Error ? _error.message : String(_error);
+      console.error('All transcript methods failed:', errorMsg);
       return NextResponse.json({
         success: false,
         error: 'Unable to extract transcript from this video. This video may not have accessible audio content, may be private, or may have technical restrictions. Please try a different video.',
-        details: process.env.NODE_ENV === 'development' ? error.toString() : undefined
+        details: process.env.NODE_ENV === 'development' ? errorMsg : undefined
       }, { status: 422 });
     }
     
@@ -232,7 +225,7 @@ ${transcriptResult.transcript}`;
         cleanedTranscript = parsed.cleaned_transcript || response;
         summary = parsed.summary || '';
         keyPoints = Array.isArray(parsed.key_points) ? parsed.key_points : [];
-      } catch (parseError) {
+      } catch {
         console.log('⚠️ Claude response not JSON, using fallback parsing');
         // Fallback: use entire response as cleaned transcript
         cleanedTranscript = response;

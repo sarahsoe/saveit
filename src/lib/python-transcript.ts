@@ -15,7 +15,7 @@ interface PythonTranscriptResult {
 }
 
 export async function getPythonTranscript(videoUrl: string): Promise<PythonTranscriptResult> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve, _reject) => {
     const scriptPath = path.join(process.cwd(), 'scripts', 'transcript_service.py');
     const python = spawn('python3', [scriptPath, videoUrl]);
     let stdout = '';
@@ -74,7 +74,7 @@ export async function getTranscriptWithFallback(videoUrl: string) {
       source: 'nodejs_' + nodeResult.source,
       success: true
     };
-  } catch (nodeError) {
+  } catch (_nodeError) {
     console.log('❌ Node.js methods failed, trying Python...');
   }
   try {
@@ -90,7 +90,7 @@ export async function getTranscriptWithFallback(videoUrl: string) {
     } else {
       throw new Error(pythonResult.error || 'Python method failed');
     }
-  } catch (pythonError) {
+  } catch (_pythonError) {
     console.log('❌ Python method also failed, trying Whisper...');
   }
   try {
@@ -106,7 +106,7 @@ export async function getTranscriptWithFallback(videoUrl: string) {
     } else {
       throw new Error(whisperResult.error || 'Whisper method failed');
     }
-  } catch (whisperError) {
+  } catch (_whisperError) {
     console.log('❌ Whisper method also failed');
     throw new Error('All methods failed. Node.js, Python, and Whisper.');
   }
