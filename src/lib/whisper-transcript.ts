@@ -1,11 +1,8 @@
 import OpenAI from 'openai';
-import { spawn } from 'child_process';
-import fs from 'fs';
-import path from 'path';
 
-const openai = new OpenAI({
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-});
+}) : null;
 
 interface WhisperResult {
   success: boolean;
@@ -18,11 +15,9 @@ interface WhisperResult {
 }
 
 export async function getWhisperTranscript(videoUrl: string): Promise<WhisperResult> {
-  let tempAudioFile = '';
-  
   try {
-    // Check if OpenAI API key is available
-    if (!process.env.OPENAI_API_KEY) {
+    // Check if OpenAI is available
+    if (!openai || !process.env.OPENAI_API_KEY) {
       return {
         success: false,
         error: 'OpenAI API key not configured',
@@ -30,57 +25,33 @@ export async function getWhisperTranscript(videoUrl: string): Promise<WhisperRes
       };
     }
 
-    console.log('🎵 Starting Whisper transcription process...');
+    console.log('🎵 Starting Whisper transcription (Vercel compatible)...');
     
-    // Step 1: Extract audio using yt-dlp
-    console.log('🎵 Extracting audio from video...');
-    tempAudioFile = await extractAudio(videoUrl);
+    // Step 1: Get video metadata and audio URL using youtube-dl-exec
+    const { title, audioUrl, duration } = await getVideoDataWithAudio(videoUrl);
+    console.log(`📹 Video: ${title}`);
     
-    // Step 2: Check file size and estimate cost
-    const stats = fs.statSync(tempAudioFile);
-    const fileSizeMB = stats.size / (1024 * 1024);
+    // Step 2: Fetch audio file
+    console.log('🎵 Fetching audio stream...');
+    const audioFile = await fetchAudioStream(audioUrl);
     
-    // Whisper API costs $0.006 per minute
-    // Rough estimate: ~1MB per minute of audio
-    const estimatedMinutes = fileSizeMB;
+    // Step 3: Estimate cost
+    const estimatedMinutes = duration ? duration / 60 : 10; // Default 10 minutes
     const estimatedCost = estimatedMinutes * 0.006;
     
-    console.log(`📊 Audio file: ${fileSizeMB.toFixed(1)}MB, estimated cost: $${estimatedCost.toFixed(3)}`);
+    console.log(`💰 Estimated cost: $${estimatedCost.toFixed(3)} (${estimatedMinutes.toFixed(1)} minutes)`);
     
-    // Limit file size to prevent excessive costs (max 25MB = ~$0.15)
-    if (fileSizeMB > 25) {
-      fs.unlinkSync(tempAudioFile);
-      return {
-        success: false,
-        error: `Audio file too large (${fileSizeMB.toFixed(1)}MB). Maximum supported: 25MB to prevent excessive costs.`,
-        source: 'whisper_file_too_large'
-      };
-    }
-    
-    // Step 3: Transcribe with Whisper
+    // Step 4: Transcribe with Whisper
     console.log('🎤 Transcribing with Whisper API...');
     
     const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(tempAudioFile),
+      file: audioFile,
       model: 'whisper-1',
-      language: 'en', // Can be changed to 'auto' for auto-detection
-      response_format: 'verbose_json', // Includes timestamps and metadata
-      prompt: 'This is a YouTube video transcript. Please provide accurate transcription with proper punctuation.' // Helps with accuracy
+      language: 'en',
+      response_format: 'verbose_json',
+      prompt: 'This is a YouTube video transcript. Please provide accurate transcription with proper punctuation.'
     });
     
-    // Step 4: Get video metadata
-    let title = 'YouTube Video';
-    let duration = 0;
-    
-    try {
-      const metadata = await getVideoMetadata(videoUrl);
-      title = metadata.title || title;
-      duration = metadata.duration || duration;
-    } catch (error) {
-      console.log('⚠️ Could not get video metadata, using defaults');
-    }
-    
-    // Step 5: Validate transcript quality
     if (!transcription.text || transcription.text.trim().length < 50) {
       return {
         success: false,
@@ -98,13 +69,12 @@ export async function getWhisperTranscript(videoUrl: string): Promise<WhisperRes
       title: title,
       duration: duration,
       cost: estimatedCost,
-      source: 'whisper_api'
+      source: 'whisper_api_vercel'
     };
     
   } catch (error: any) {
     console.error('❌ Whisper transcription failed:', error);
     
-    // Handle specific OpenAI API errors
     let errorMessage = 'Whisper transcription failed';
     
     if (error.code === 'insufficient_quota') {
@@ -121,160 +91,89 @@ export async function getWhisperTranscript(videoUrl: string): Promise<WhisperRes
       cost: 0,
       source: 'whisper_api_error'
     };
-    
-  } finally {
-    // Always clean up temporary file
-    if (tempAudioFile && fs.existsSync(tempAudioFile)) {
-      try {
-        fs.unlinkSync(tempAudioFile);
-        console.log('🧹 Cleaned up temporary audio file');
-      } catch (cleanupError) {
-        console.error('⚠️ Failed to cleanup temp file:', cleanupError);
-      }
-    }
   }
 }
 
-async function extractAudio(videoUrl: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // Ensure temp directory exists
-    const tempDir = path.join(process.cwd(), 'temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
+async function getVideoDataWithAudio(videoUrl: string) {
+  try {
+    // Use youtube-dl-exec (works in Vercel)
+    const youtubeDl = await import('youtube-dl-exec');
+    
+    console.log('📋 Getting video metadata and audio URL...');
+    
+    const info = await youtubeDl.default(videoUrl, {
+      dumpJson: true,
+      format: 'bestaudio[ext=m4a]/bestaudio/best[height<=480]',
+      getUrl: true
+    });
+    
+    // Cast info to any to access dynamic properties
+    const infoAny = info as any;
+    
+    // Get audio URL
+    const audioUrls = await youtubeDl.default(videoUrl, {
+      getUrl: true,
+      format: 'bestaudio[ext=m4a]/bestaudio/best[height<=480]',
+      noWarnings: true
+    });
+    
+    const audioUrl = Array.isArray(audioUrls) ? audioUrls[0] : audioUrls;
+    
+    return {
+      title: infoAny.title || 'YouTube Video',
+      duration: infoAny.duration || 600,
+      audioUrl: audioUrl
+    };
+    
+  } catch (error) {
+    throw new Error(`Failed to get video data: ${error}`);
+  }
+}
+
+async function fetchAudioStream(audioUrl: string): Promise<File> {
+  try {
+    console.log('🌐 Fetching audio stream...');
+    
+    const response = await fetch(audioUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; WhisperTranscript/1.0)'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
-    // Generate unique temporary file path
-    const timestamp = Date.now();
-    const randomId = Math.random().toString(36).substring(7);
-    const tempFile = path.join(tempDir, `audio_${timestamp}_${randomId}.mp3`);
+    const arrayBuffer = await response.arrayBuffer();
     
-    console.log(`🎵 Extracting audio to: ${tempFile}`);
+    // Check file size (limit to 25MB to prevent excessive costs)
+    const fileSizeMB = arrayBuffer.byteLength / (1024 * 1024);
+    console.log(`📊 Audio file size: ${fileSizeMB.toFixed(1)}MB`);
     
-    // Use yt-dlp to extract audio
-    const ytdlpArgs = [
-      '-x', // Extract audio only
-      '--audio-format', 'mp3',
-      '--audio-quality', '3', // Good quality but reasonable file size
-      '--max-filesize', '25M', // Prevent huge files
-      '-o', tempFile.replace('.mp3', '.%(ext)s'),
-      '--no-playlist', // Only download single video
-      '--ignore-errors', // Continue on minor errors
-      videoUrl
-    ];
+    if (fileSizeMB > 25) {
+      throw new Error(`Audio file too large (${fileSizeMB.toFixed(1)}MB). Maximum: 25MB to prevent excessive costs.`);
+    }
     
-    const ytdlp = spawn('yt-dlp', ytdlpArgs);
-    
-    let stderr = '';
-    let stdout = '';
-    
-    ytdlp.stderr.on('data', (data) => {
-      stderr += data.toString();
+    // Create File object for OpenAI API
+    const file = new File([arrayBuffer], 'audio.m4a', { 
+      type: 'audio/m4a' 
     });
     
-    ytdlp.stdout.on('data', (data) => {
-      stdout += data.toString();
-      // Show progress
-      if (data.toString().includes('%')) {
-        process.stdout.write('.');
-      }
-    });
+    return file;
     
-    ytdlp.on('close', (code) => {
-      console.log(''); // New line after progress dots
-      
-      if (code === 0) {
-        // Check if file was created successfully
-        if (fs.existsSync(tempFile)) {
-          const stats = fs.statSync(tempFile);
-          console.log(`✅ Audio extracted successfully: ${(stats.size / 1024 / 1024).toFixed(1)}MB`);
-          resolve(tempFile);
-        } else {
-          reject(new Error('Audio file was not created by yt-dlp'));
-        }
-      } else {
-        reject(new Error(`yt-dlp failed with code ${code}. Error: ${stderr.slice(-500)}`)); // Last 500 chars of error
-      }
-    });
-    
-    ytdlp.on('error', (error) => {
-      reject(new Error(`Failed to start yt-dlp: ${error.message}. Make sure yt-dlp is installed: pip install yt-dlp`));
-    });
-    
-    // Timeout after 5 minutes (some videos are long)
-    setTimeout(() => {
-      ytdlp.kill('SIGTERM');
-      reject(new Error('Audio extraction timeout (5 minutes). Video may be too long or download too slow.'));
-    }, 300000);
-  });
+  } catch (error) {
+    throw new Error(`Failed to fetch audio stream: ${error}`);
+  }
 }
 
-async function getVideoMetadata(videoUrl: string): Promise<{title: string, duration: number}> {
-  return new Promise((resolve, reject) => {
-    const ytdlp = spawn('yt-dlp', [
-      '--print', '%(title)s|||%(duration)s',
-      '--no-download',
-      '--ignore-errors',
-      videoUrl
-    ]);
-    
-    let stdout = '';
-    let stderr = '';
-    
-    ytdlp.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    
-    ytdlp.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    
-    ytdlp.on('close', (code) => {
-      if (code === 0 && stdout.trim()) {
-        try {
-          const [title, durationStr] = stdout.trim().split('|||');
-          const duration = parseInt(durationStr) || 0;
-          resolve({ 
-            title: title?.trim() || 'YouTube Video', 
-            duration 
-          });
-        } catch (error) {
-          resolve({ title: 'YouTube Video', duration: 0 });
-        }
-      } else {
-        // Don't reject, just return defaults
-        resolve({ title: 'YouTube Video', duration: 0 });
-      }
-    });
-    
-    ytdlp.on('error', (error) => {
-      // Don't reject, just return defaults
-      resolve({ title: 'YouTube Video', duration: 0 });
-    });
-    
-    // Shorter timeout for metadata
-    setTimeout(() => {
-      ytdlp.kill('SIGTERM');
-      resolve({ title: 'YouTube Video', duration: 0 });
-    }, 30000);
-  });
-}
-
-// Helper function to check if yt-dlp is available
-export async function checkYtDlpAvailable(): Promise<boolean> {
-  return new Promise((resolve) => {
-    const ytdlp = spawn('yt-dlp', ['--version']);
-    
-    ytdlp.on('close', (code) => {
-      resolve(code === 0);
-    });
-    
-    ytdlp.on('error', () => {
-      resolve(false);
-    });
-    
-    setTimeout(() => {
-      ytdlp.kill();
-      resolve(false);
-    }, 5000);
-  });
+// Helper function to check if youtube-dl-exec is available
+export async function checkYoutubeDlAvailable(): Promise<boolean> {
+  try {
+    const youtubeDl = await import('youtube-dl-exec');
+    // Try a simple version check
+    await youtubeDl.default('--version');
+    return true;
+  } catch (_error) {
+    return false;
+  }
 } 
