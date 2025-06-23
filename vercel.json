@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "src/app/api/transcribe/route.ts": {
+      "maxDuration": 300,
+      "memory": 1024
+    }
+  },
+  "regions": ["iad1"],
+  "framework": "nextjs",
+  "limits": {
+    "maxRequestBody": "50mb"
+  }
+} 
