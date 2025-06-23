@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { supabase } from '@/lib/supabase';
 
-const MAX_SIZE_MB = 25;
+const MAX_SIZE_MB = 5000; // Supabase Storage supports up to 5GB
 const ALLOWED_TYPES = [
   'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/m4a',
   'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm'
@@ -12,6 +13,7 @@ export default function TranscriptUploader({ onTranscription }: { onTranscriptio
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState('');
   const [progress, setProgress] = useState('');
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [cost, setCost] = useState<number | null>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -23,7 +25,7 @@ export default function TranscriptUploader({ onTranscription }: { onTranscriptio
       return;
     }
     if (f.size > MAX_SIZE_MB * 1024 * 1024) {
-      setError('File too large (max 25MB). Please compress or trim your audio.');
+      setError('File too large (max 5GB).');
       setFile(null);
       return;
     }
@@ -32,24 +34,57 @@ export default function TranscriptUploader({ onTranscription }: { onTranscriptio
     setCost(Math.round((f.size / (1024 * 1024 * 0.5)) * 0.006 * 1000) / 1000); // rough estimate
   }
 
+  async function uploadToSupabase(file: File): Promise<string> {
+    setProgress('Uploading to Supabase...');
+    setUploadProgress(0);
+    const filePath = `uploads/${Date.now()}_${file.name}`;
+    const { data, error: uploadError } = await supabase.storage
+      .from('audio-uploads')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+        contentType: file.type,
+        onUploadProgress: (event: ProgressEvent) => {
+          if (event.lengthComputable) {
+            setUploadProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        }
+      } as any); // onUploadProgress is not typed in supabase-js yet
+    if (uploadError) {
+      throw new Error(uploadError.message);
+    }
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage.from('audio-uploads').getPublicUrl(filePath);
+    if (!publicUrlData?.publicUrl) {
+      throw new Error('Failed to get public URL from Supabase');
+    }
+    return publicUrlData.publicUrl;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    setProgress('Processing...');
+    setProgress('');
+    setUploadProgress(0);
     try {
       let res: Response | undefined;
       if (tab === 'youtube') {
+        setProgress('Processing...');
         res = await fetch('/api/transcribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ videoUrl })
         });
       } else if (file) {
-        const formData = new FormData();
-        formData.append('audioFile', file);
+        // 1. Upload to Supabase Storage
+        setProgress('Uploading to Supabase...');
+        const publicUrl = await uploadToSupabase(file);
+        setProgress('Processing...');
+        // 2. Send public URL to API
         res = await fetch('/api/transcribe', {
           method: 'POST',
-          body: formData
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileUrl: publicUrl, fileName: file.name })
         });
       }
       if (!res) throw new Error('No input provided');
@@ -96,8 +131,13 @@ export default function TranscriptUploader({ onTranscription }: { onTranscriptio
               </div>
             )}
             <div className="text-xs text-gray-500 mb-2">
-              Max file size: 25MB. If your file is too large, please compress or trim it before uploading.
+              Max file size: 5GB. Files are uploaded to secure cloud storage before processing.
             </div>
+            {uploadProgress > 0 && uploadProgress < 100 && (
+              <div className="w-full bg-gray-200 rounded-full h-2.5 mb-2">
+                <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${uploadProgress}%` }} />
+              </div>
+            )}
           </div>
         )}
         {/* Status and Error Messages */}

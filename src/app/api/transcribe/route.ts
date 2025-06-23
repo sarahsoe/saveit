@@ -362,34 +362,38 @@ export async function POST(request: NextRequest) {
     const contentType = request.headers.get('content-type') || '';
     let isFileUpload = false;
     let input: string | File;
-    
+    let fileName: string | undefined;
+
     // Handle different input types
-    if (contentType.includes('multipart/form-data')) {
-      // File upload
-      const formData = await request.formData();
-      const audioFile = formData.get('audioFile') as File;
-      
-      if (!audioFile) {
-        return NextResponse.json({ error: 'Audio file is required' }, { status: 400 });
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      if (body.fileUrl) {
+        // File upload via Supabase Storage
+        isFileUpload = true;
+        fileName = body.fileName || 'audio_upload';
+        const fileUrl = body.fileUrl;
+        // Download the file from Supabase Storage
+        const fileRes = await fetch(fileUrl);
+        if (!fileRes.ok) {
+          return NextResponse.json({ error: 'Failed to download file from storage' }, { status: 400 });
+        }
+        const arrayBuffer = await fileRes.arrayBuffer();
+        // Try to infer content type from response or fallback
+        const contentType = fileRes.headers.get('content-type') || 'audio/mpeg';
+        input = new File([arrayBuffer], fileName, { type: contentType });
+        console.log(`🎵 Downloaded file from Supabase Storage: ${fileName}`);
+      } else if (body.videoUrl) {
+        // JSON with YouTube URL
+        isFileUpload = false;
+        input = body.videoUrl;
+        console.log(`🎬 Received YouTube URL: ${body.videoUrl}`);
+      } else {
+        return NextResponse.json({ error: 'No fileUrl or videoUrl provided' }, { status: 400 });
       }
-      
-      isFileUpload = true;
-      input = audioFile;
-      console.log(`🎵 Received file upload: ${audioFile.name}`);
-      
     } else {
-      // JSON with YouTube URL
-      const { videoUrl } = await request.json();
-      
-      if (!videoUrl) {
-        return NextResponse.json({ error: 'Video URL is required' }, { status: 400 });
-      }
-      
-      isFileUpload = false;
-      input = videoUrl;
-      console.log(`🎬 Received YouTube URL: ${videoUrl}`);
+      return NextResponse.json({ error: 'Unsupported content type' }, { status: 400 });
     }
-    
+
     // Check for existing transcript (only for YouTube videos)
     if (!isFileUpload) {
       const videoId = extractYouTubeId(input as string);
@@ -400,7 +404,7 @@ export async function POST(request: NextRequest) {
           .eq('video_id', videoId)
           .eq('status', 'completed')
           .single();
-        
+
         if (existingData) {
           console.log('📋 Found existing transcript');
           return NextResponse.json({
@@ -411,19 +415,19 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-    
+
     // Process the transcript
     const transcriptResult = await processTranscriptRequest(isFileUpload, input);
-    
+
     if (!transcriptResult.transcript) {
       return NextResponse.json({
         success: false,
         error: 'Could not extract transcript'
       }, { status: 422 });
     }
-    
+
     console.log('🤖 Processing with Claude...');
-    
+
     // Process with Claude
     const claudeResponse = await anthropic.messages.create({
       model: "claude-3-5-sonnet-20241022",
@@ -435,18 +439,18 @@ export async function POST(request: NextRequest) {
 ${transcriptResult.transcript}`
       }]
     });
-    
+
     const cleanedTranscript = claudeResponse.content[0].type === 'text' 
       ? claudeResponse.content[0].text 
       : 'Processing failed';
-    
+
     // Calculate costs
     const claudeInputCost = (claudeResponse.usage?.input_tokens || 0) * 0.003 / 1000;
     const claudeOutputCost = (claudeResponse.usage?.output_tokens || 0) * 0.015 / 1000;
     const totalCost = (transcriptResult.cost || 0) + claudeInputCost + claudeOutputCost;
-    
+
     console.log(`💰 Total cost: $${totalCost.toFixed(4)}`);
-    
+
     // Save to database
     const { data, error } = await supabase
       .from('transcriptions')
@@ -462,19 +466,19 @@ ${transcriptResult.transcript}`
         status: 'completed',
         // New fields for file uploads
         is_file_upload: isFileUpload,
-        file_name: isFileUpload ? (input as File).name : null,
-        file_size: isFileUpload ? (input as File).size : null
+        file_name: isFileUpload ? (fileName || 'audio_upload') : null,
+        file_size: isFileUpload && input instanceof File ? input.size : null
       })
       .select()
       .single();
-    
+
     if (error) {
       console.error('Database error:', error);
       throw error;
     }
-    
+
     console.log('✅ Success! Transcript saved');
-    
+
     return NextResponse.json({
       success: true,
       data: {
@@ -487,10 +491,10 @@ ${transcriptResult.transcript}`
         }
       }
     });
-    
+
   } catch (error: any) {
     console.error('❌ Processing failed:', error);
-    
+
     return NextResponse.json({
       success: false,
       error: error.message || 'Processing failed',
