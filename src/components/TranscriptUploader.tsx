@@ -100,8 +100,19 @@ export default function TranscriptUploader({ onTranscription }: { onTranscriptio
             </div>
           </div>
         )}
-        {error && <div className="text-red-500 mb-2">{error}</div>}
-        {progress && <div className="text-blue-500 mb-2">{progress}</div>}
+        {/* Status and Error Messages */}
+        <div className="mb-2 min-h-[24px]">
+          {error && (
+            <div className="text-red-600 bg-red-100 dark:bg-red-900/40 rounded px-2 py-1 text-sm">
+              {error}
+            </div>
+          )}
+          {!error && progress && (
+            <div className="text-blue-700 bg-blue-100 dark:bg-blue-900/40 rounded px-2 py-1 text-sm">
+              {progress}
+            </div>
+          )}
+        </div>
         <button
           type="submit"
           className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
