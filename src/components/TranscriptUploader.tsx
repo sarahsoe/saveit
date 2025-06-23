@@ -19,10 +19,12 @@ export default function TranscriptUploader({ onTranscription }: { onTranscriptio
     if (!f) return;
     if (!ALLOWED_TYPES.includes(f.type)) {
       setError('Unsupported file type.');
+      setFile(null);
       return;
     }
     if (f.size > MAX_SIZE_MB * 1024 * 1024) {
-      setError('File too large (max 25MB).');
+      setError('File too large (max 25MB). Please compress or trim your audio.');
+      setFile(null);
       return;
     }
     setFile(f);
@@ -93,6 +95,9 @@ export default function TranscriptUploader({ onTranscription }: { onTranscriptio
                 {cost !== null && <span className="ml-2">Estimated cost: ${cost.toFixed(3)}</span>}
               </div>
             )}
+            <div className="text-xs text-gray-500 mb-2">
+              Max file size: 25MB. If your file is too large, please compress or trim it before uploading.
+            </div>
           </div>
         )}
         {error && <div className="text-red-500 mb-2">{error}</div>}
@@ -100,7 +105,7 @@ export default function TranscriptUploader({ onTranscription }: { onTranscriptio
         <button
           type="submit"
           className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          disabled={progress === 'Processing...'}
+          disabled={progress === 'Processing...' || (tab === 'file' && !file)}
         >
           {progress === 'Processing...' ? 'Processing...' : 'Transcribe'}
         </button>
