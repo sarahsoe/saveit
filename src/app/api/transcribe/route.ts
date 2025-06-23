@@ -477,6 +477,23 @@ ${transcriptResult.transcript}`
       throw error;
     }
 
+    // Clean up: delete file from Supabase Storage after processing (for privacy/cost)
+    if (isFileUpload) {
+      try {
+        // Extract the path from the public URL (uploads/...) if possible
+        const safeFileName = fileName ? fileName : 'audio_upload';
+        const filePath = `uploads/${safeFileName}`;
+        const { error: delError } = await supabase.storage.from('audio-uploads').remove([filePath]);
+        if (delError) {
+          console.warn('Failed to delete file from Supabase Storage:', delError.message);
+        } else {
+          console.log('Deleted file from Supabase Storage:', filePath);
+        }
+      } catch (cleanupErr) {
+        console.warn('Error during Supabase Storage cleanup:', cleanupErr);
+      }
+    }
+
     console.log('✅ Success! Transcript saved');
 
     return NextResponse.json({
