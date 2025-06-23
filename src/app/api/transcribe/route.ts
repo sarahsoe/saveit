@@ -245,43 +245,180 @@ async function getActualWorkingTranscript(videoUrl: string) {
   throw new Error('Both caption and Whisper methods failed. This video may not be transcribable.');
 }
 
-export async function POST(request: NextRequest) {
+// 🎵 NEW: MP3 File Upload Transcription
+async function transcribeUploadedFile(audioFile: File) {
+  if (!openai) {
+    throw new Error('OpenAI API key not configured - required for file transcription');
+  }
+
+  console.log(`🎵 Transcribing uploaded file: ${audioFile.name}`);
+  console.log(`📊 File size: ${(audioFile.size / 1024 / 1024).toFixed(1)}MB`);
+  
+  // Validate file
+  if (audioFile.size > 25 * 1024 * 1024) { // 25MB limit
+    throw new Error('File too large. Maximum size: 25MB');
+  }
+  
+  const allowedTypes = [
+    'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/m4a', 
+    'audio/aac', 'audio/ogg', 'audio/flac', 'audio/webm'
+  ];
+  
+  if (!allowedTypes.includes(audioFile.type)) {
+    throw new Error(`Unsupported file type: ${audioFile.type}. Supported: MP3, WAV, M4A, AAC, OGG, FLAC, WebM`);
+  }
+  
+  // Estimate cost (Whisper charges $0.006 per minute)
+  const estimatedMinutes = Math.min(audioFile.size / (1024 * 1024 * 0.5), 120); // Rough estimate: 0.5MB per minute, cap at 2 hours
+  const estimatedCost = estimatedMinutes * 0.006;
+  
+  console.log(`💰 Estimated cost: $${estimatedCost.toFixed(3)} (~${estimatedMinutes.toFixed(1)} minutes)`);
+  
   try {
-    const { videoUrl } = await request.json();
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: 'whisper-1',
+      language: 'en', // You can make this configurable
+      response_format: 'verbose_json',
+      prompt: 'This is an audio file upload. Please provide accurate transcription with proper punctuation.'
+    });
     
-    if (!videoUrl) {
-      return NextResponse.json({ error: 'Video URL is required' }, { status: 400 });
+    if (!transcription.text || transcription.text.trim().length < 10) {
+      throw new Error('Transcription returned insufficient content');
     }
     
-    console.log(`🎬 Processing video: ${videoUrl}`);
+    console.log(`✅ File transcription complete! Length: ${transcription.text.length} characters`);
     
-    // Check for existing transcript
+    return {
+      success: true,
+      transcript: transcription.text.trim(),
+      title: audioFile.name.replace(/\.[^/.]+$/, ''), // Remove file extension
+      duration: transcription.duration || estimatedMinutes * 60,
+      cost: estimatedCost,
+      source: 'whisper_file_upload'
+    };
+    
+  } catch (error: any) {
+    console.error('❌ File transcription failed:', error);
+    
+    let errorMessage = 'File transcription failed';
+    if (error.code === 'insufficient_quota') {
+      errorMessage = 'OpenAI API quota exceeded. Please check your billing.';
+    } else if (error.message) {
+      errorMessage = `Transcription error: ${error.message}`;
+    }
+    
+    throw new Error(errorMessage);
+  }
+}
+
+// 🎯 MAIN PROCESSING FUNCTION - HANDLES BOTH YOUTUBE AND FILE UPLOADS
+async function processTranscriptRequest(isFileUpload: boolean, input: string | File) {
+  if (isFileUpload) {
+    // Handle file upload
+    console.log('🎵 Processing uploaded audio file...');
+    return await transcribeUploadedFile(input as File);
+  } else {
+    // Handle YouTube URL
+    const videoUrl = input as string;
     const videoId = extractYouTubeId(videoUrl);
-    if (videoId) {
-      const { data: existingData } = await supabase
-        .from('transcriptions')
-        .select('*')
-        .eq('video_id', videoId)
-        .eq('status', 'completed')
-        .single();
+    if (!videoId) {
+      throw new Error('Invalid YouTube URL');
+    }
+    
+    console.log(`🎬 Processing YouTube video: ${videoId}`);
+    
+    // Try Method 1: YouTube Captions (Fast and Free)
+    try {
+      console.log('🚀 METHOD 1: Trying YouTube captions...');
+      const captionResult = await getYouTubeTranscript(videoId);
+      if (captionResult.success) {
+        console.log('✅ SUCCESS: YouTube captions worked!');
+        return captionResult;
+      }
+    } catch (error) {
+      console.log('❌ METHOD 1 FAILED: YouTube captions not available');
+    }
+    
+    // Try Method 2: Whisper (Reliable but Paid)
+    try {
+      console.log('🚀 METHOD 2: Trying Whisper transcription...');
+      const whisperResult = await getWhisperTranscript(videoUrl);
+      if (whisperResult.success) {
+        console.log('✅ SUCCESS: Whisper worked!');
+        return whisperResult;
+      }
+    } catch (error) {
+      console.log('❌ METHOD 2 FAILED: Whisper transcription failed');
+      console.log('Error details:', error);
+    }
+    
+    throw new Error('Both caption and Whisper methods failed for this YouTube video.');
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const contentType = request.headers.get('content-type') || '';
+    let isFileUpload = false;
+    let input: string | File;
+    
+    // Handle different input types
+    if (contentType.includes('multipart/form-data')) {
+      // File upload
+      const formData = await request.formData();
+      const audioFile = formData.get('audioFile') as File;
       
-      if (existingData) {
-        console.log('📋 Found existing transcript');
-        return NextResponse.json({
-          success: true,
-          data: existingData,
-          cached: true
-        });
+      if (!audioFile) {
+        return NextResponse.json({ error: 'Audio file is required' }, { status: 400 });
+      }
+      
+      isFileUpload = true;
+      input = audioFile;
+      console.log(`🎵 Received file upload: ${audioFile.name}`);
+      
+    } else {
+      // JSON with YouTube URL
+      const { videoUrl } = await request.json();
+      
+      if (!videoUrl) {
+        return NextResponse.json({ error: 'Video URL is required' }, { status: 400 });
+      }
+      
+      isFileUpload = false;
+      input = videoUrl;
+      console.log(`🎬 Received YouTube URL: ${videoUrl}`);
+    }
+    
+    // Check for existing transcript (only for YouTube videos)
+    if (!isFileUpload) {
+      const videoId = extractYouTubeId(input as string);
+      if (videoId) {
+        const { data: existingData } = await supabase
+          .from('transcriptions')
+          .select('*')
+          .eq('video_id', videoId)
+          .eq('status', 'completed')
+          .single();
+        
+        if (existingData) {
+          console.log('📋 Found existing transcript');
+          return NextResponse.json({
+            success: true,
+            data: existingData,
+            cached: true
+          });
+        }
       }
     }
     
-    // Get transcript using working methods
-    const transcriptResult = await getActualWorkingTranscript(videoUrl);
+    // Process the transcript
+    const transcriptResult = await processTranscriptRequest(isFileUpload, input);
     
     if (!transcriptResult.transcript) {
       return NextResponse.json({
         success: false,
-        error: 'Could not extract transcript from this video'
+        error: 'Could not extract transcript'
       }, { status: 422 });
     }
     
@@ -314,15 +451,19 @@ ${transcriptResult.transcript}`
     const { data, error } = await supabase
       .from('transcriptions')
       .insert({
-        video_id: videoId,
-        video_url: videoUrl,
+        video_id: isFileUpload ? null : extractYouTubeId(input as string),
+        video_url: isFileUpload ? null : input as string,
         video_title: transcriptResult.title,
         raw_transcript: transcriptResult.transcript,
         cleaned_transcript: cleanedTranscript,
         summary: cleanedTranscript.substring(0, 500) + (cleanedTranscript.length > 500 ? '...' : ''),
         cost: totalCost,
         processing_method: transcriptResult.source,
-        status: 'completed'
+        status: 'completed',
+        // New fields for file uploads
+        is_file_upload: isFileUpload,
+        file_name: isFileUpload ? (input as File).name : null,
+        file_size: isFileUpload ? (input as File).size : null
       })
       .select()
       .single();
@@ -341,6 +482,7 @@ ${transcriptResult.transcript}`
         processing_metadata: {
           method: transcriptResult.source,
           cost: totalCost,
+          input_type: isFileUpload ? 'file_upload' : 'youtube_url',
           working_solution: true
         }
       }
