@@ -4,10 +4,12 @@ import { useState, useEffect } from 'react';
 import TranscriptionForm from '@/components/TranscriptionForm';
 import TranscriptionList from '@/components/TranscriptionList';
 import { TranscriptionData } from '@/types';
+import TranscriptUploader from '@/components/TranscriptUploader';
 
 export default function HomePage() {
   const [transcriptions, setTranscriptions] = useState<TranscriptionData[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [selected, setSelected] = useState<any | null>(null);
+  const [error, setError] = useState('');
 
   // Load transcriptions on mount
   useEffect(() => {
@@ -30,52 +32,15 @@ export default function HomePage() {
     }
   };
 
-  const handleTranscribe = async (videoUrl: string) => {
-    setIsLoading(true);
-    try {
-      const response = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ videoUrl }),
-      });
+  function handleTranscription(data: any) {
+    setSelected(data);
+    setTranscriptions([data, ...transcriptions]);
+    setError('');
+  }
 
-      const result = await response.json();
-      
-      if (result.success && result.data) {
-        setTranscriptions([result.data, ...transcriptions]);
-      } else {
-        console.error('Transcription failed:', result.error);
-        alert(`Transcription failed: ${result.error}`);
-      }
-    } catch (error) {
-      console.error('Failed to transcribe:', error);
-      alert('Failed to transcribe video. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      const response = await fetch(`/api/transcriptions/${id}`, { 
-        method: 'DELETE' 
-      });
-      
-      const result = await response.json();
-      
-      if (result.success) {
-        setTranscriptions(transcriptions.filter(t => t.id !== id));
-      } else {
-        console.error('Failed to delete transcription:', result.error);
-        alert('Failed to delete transcription');
-      }
-    } catch (error) {
-      console.error('Failed to delete transcription:', error);
-      alert('Failed to delete transcription');
-    }
-  };
+  function handleClose() {
+    setSelected(null);
+  }
 
   // Defensive log before rendering the list
   console.log('HomePage transcriptions state:', transcriptions, typeof transcriptions, Array.isArray(transcriptions));
@@ -88,21 +53,50 @@ export default function HomePage() {
           SaveIt
         </h1>
         <p className="text-slate-600 dark:text-slate-400 text-lg">
-          Transform any video into clean, searchable transcripts
+          Transcribe YouTube videos or upload audio files for instant, clean transcripts
         </p>
       </div>
 
       {/* Transcription Form */}
       <div className="mb-8">
-        <TranscriptionForm onTranscribe={handleTranscribe} isLoading={isLoading} />
+        <TranscriptUploader onTranscription={handleTranscription} />
       </div>
 
-      {/* Transcriptions List - WITH BULLETPROOF GUARDS */}
-      {Array.isArray(transcriptions) ? (
-        <TranscriptionList transcriptions={transcriptions} onDelete={handleDelete} />
-      ) : (
-        <div>Loading transcriptions...</div>
+      {selected && (
+        <div className="mb-8 p-4 bg-green-50 dark:bg-green-900/30 rounded-lg shadow">
+          <div className="flex justify-between items-center mb-2">
+            <h2 className="text-xl font-bold">Transcription Result</h2>
+            <button onClick={handleClose} className="text-sm text-blue-600">Close</button>
+          </div>
+          <div className="mb-2 text-sm text-gray-700 dark:text-gray-200">
+            <b>Title:</b> {selected.video_title || selected.file_name}<br/>
+            <b>Source:</b> {selected.processing_method}<br/>
+            <b>Cost:</b> ${selected.cost?.toFixed(3)}
+          </div>
+          <div className="mb-2">
+            <b>Summary:</b>
+            <div className="whitespace-pre-line text-gray-800 dark:text-gray-100 text-base mt-1">
+              {selected.summary}
+            </div>
+          </div>
+          <div>
+            <b>Transcript:</b>
+            <div className="whitespace-pre-line text-gray-800 dark:text-gray-100 text-sm mt-1 max-h-64 overflow-y-auto">
+              {selected.cleaned_transcript || selected.raw_transcript}
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* Transcriptions List - WITH BULLETPROOF GUARDS */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold mb-2">Recent Transcriptions</h2>
+        {Array.isArray(transcriptions) && transcriptions.length > 0 ? (
+          <TranscriptionList transcriptions={transcriptions} onDelete={loadTranscriptions} />
+        ) : (
+          <div>No transcriptions yet.</div>
+        )}
+      </div>
     </div>
   );
 }
